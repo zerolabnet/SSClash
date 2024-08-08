@@ -18,9 +18,13 @@ start(){
         iptables -t mangle -A CLASH -d 224.0.0.0/4 -j RETURN
         iptables -t mangle -A CLASH -d 240.0.0.0/4 -j RETURN
         iptables -t mangle -A CLASH -i wg+ -j RETURN
+        iptables -t mangle -A CLASH -o wg+ -j RETURN
         iptables -t mangle -A CLASH -i ppp+ -j RETURN
+        iptables -t mangle -A CLASH -o ppp+ -j RETURN
         iptables -t mangle -A CLASH -i veth+ -j RETURN
+        iptables -t mangle -A CLASH -o veth+ -j RETURN
         iptables -t mangle -A CLASH -i docker+ -j RETURN
+        iptables -t mangle -A CLASH -o docker+ -j RETURN
         iptables -t mangle -A CLASH -p tcp -j TPROXY --on-port 7894 --tproxy-mark 1
         iptables -t mangle -A CLASH -p udp -j TPROXY --on-port 7894 --tproxy-mark 1
         iptables -t mangle -A PREROUTING -m addrtype --dst-type LOCAL -j RETURN
@@ -37,9 +41,13 @@ start(){
         iptables -t mangle -A CLASH_SELF -d 224.0.0.0/4 -j RETURN
         iptables -t mangle -A CLASH_SELF -d 240.0.0.0/4 -j RETURN
         iptables -t mangle -A CLASH_SELF -i wg+ -j RETURN
+        iptables -t mangle -A CLASH_SELF -o wg+ -j RETURN
         iptables -t mangle -A CLASH_SELF -i ppp+ -j RETURN
+        iptables -t mangle -A CLASH_SELF -o ppp+ -j RETURN
         iptables -t mangle -A CLASH_SELF -i veth+ -j RETURN
+        iptables -t mangle -A CLASH_SELF -o veth+ -j RETURN
         iptables -t mangle -A CLASH_SELF -i docker+ -j RETURN
+        iptables -t mangle -A CLASH_SELF -o docker+ -j RETURN
         iptables -t mangle -A CLASH_SELF -m mark --mark 2 -j RETURN
         iptables -t mangle -A CLASH_SELF -p tcp -j MARK --set-mark 1
         iptables -t mangle -A CLASH_SELF -p udp -j MARK --set-mark 1
