@@ -109,7 +109,7 @@ http://ROUTER_IP:9090/ui/
 </p>
 
 # Remove Clash
-To remove Clash, stop the service and delete the related files.
+To remove Clash, stop the service, delete the related files and kernel module `kmod-nft-tproxy` or `iptables-mod-tproxy`.
 
 ```bash
 /etc/init.d/clash stop
