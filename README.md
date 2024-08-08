@@ -21,6 +21,8 @@ Install the necessary kernel module for nftables.
 opkg install kmod-nft-tproxy
 ```
 
+For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
+
 ## Step 3: Set Up Clash Directory
 Create the Clash directory and navigate to it.
 
