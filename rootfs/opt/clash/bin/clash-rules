@@ -1,0 +1,84 @@
+#!/bin/sh
+
+start(){
+    if hash nft; then
+        nft -f /opt/clash/nft.conf
+        ip route add local default dev lo table 100
+        ip rule add fwmark 1 table 100
+    elif hash iptables; then
+        iptables -t mangle -N CLASH
+        iptables -t mangle -I CLASH -p udp --dport 443 -j REJECT # Block QUIC first (for YouTube)
+        iptables -t mangle -A CLASH -d 0.0.0.0/8 -j RETURN
+        iptables -t mangle -A CLASH -d 10.0.0.0/8 -j RETURN
+        iptables -t mangle -A CLASH -d 100.64.0.0/10 -j RETURN
+        iptables -t mangle -A CLASH -d 127.0.0.0/8 -j RETURN
+        iptables -t mangle -A CLASH -d 169.254.0.0/16 -j RETURN
+        iptables -t mangle -A CLASH -d 172.16.0.0/12 -j RETURN
+        iptables -t mangle -A CLASH -d 192.168.0.0/16 -j RETURN
+        iptables -t mangle -A CLASH -d 224.0.0.0/4 -j RETURN
+        iptables -t mangle -A CLASH -d 240.0.0.0/4 -j RETURN
+        iptables -t mangle -A CLASH -i wg+ -j RETURN
+        iptables -t mangle -A CLASH -i ppp+ -j RETURN
+        iptables -t mangle -A CLASH -i veth+ -j RETURN
+        iptables -t mangle -A CLASH -i docker+ -j RETURN
+        iptables -t mangle -A CLASH -p tcp -j TPROXY --on-port 7894 --tproxy-mark 1
+        iptables -t mangle -A CLASH -p udp -j TPROXY --on-port 7894 --tproxy-mark 1
+        iptables -t mangle -A PREROUTING -m addrtype --dst-type LOCAL -j RETURN
+        iptables -t mangle -A PREROUTING -j CLASH
+
+        iptables -t mangle -N CLASH_SELF
+        iptables -t mangle -A CLASH_SELF -d 0.0.0.0/8 -j RETURN
+        iptables -t mangle -A CLASH_SELF -d 10.0.0.0/8 -j RETURN
+        iptables -t mangle -A CLASH_SELF -d 100.64.0.0/10 -j RETURN
+        iptables -t mangle -A CLASH_SELF -d 127.0.0.0/8 -j RETURN
+        iptables -t mangle -A CLASH_SELF -d 169.254.0.0/16 -j RETURN
+        iptables -t mangle -A CLASH_SELF -d 172.16.0.0/12 -j RETURN
+        iptables -t mangle -A CLASH_SELF -d 192.168.0.0/16 -j RETURN
+        iptables -t mangle -A CLASH_SELF -d 224.0.0.0/4 -j RETURN
+        iptables -t mangle -A CLASH_SELF -d 240.0.0.0/4 -j RETURN
+        iptables -t mangle -A CLASH_SELF -i wg+ -j RETURN
+        iptables -t mangle -A CLASH_SELF -i ppp+ -j RETURN
+        iptables -t mangle -A CLASH_SELF -i veth+ -j RETURN
+        iptables -t mangle -A CLASH_SELF -i docker+ -j RETURN
+        iptables -t mangle -A CLASH_SELF -m mark --mark 2 -j RETURN
+        iptables -t mangle -A CLASH_SELF -p tcp -j MARK --set-mark 1
+        iptables -t mangle -A CLASH_SELF -p udp -j MARK --set-mark 1
+        iptables -t mangle -A OUTPUT -j CLASH_SELF
+
+        ip route add local default dev lo table 100
+        ip rule add fwmark 1 table 100
+    else
+        echo "unknown firewall, ignore"
+    fi
+}
+
+stop(){
+    if hash nft; then
+        nft table ip clash
+        nft delete table ip clash
+        ip route del local default dev lo table 100
+        ip rule del table 100
+    elif hash iptables; then
+        iptables -t mangle -D PREROUTING -j CLASH
+        iptables -t mangle -F CLASH
+        iptables -t mangle -X CLASH
+
+        iptables -t mangle -D OUTPUT -j CLASH_SELF
+        iptables -t mangle -F CLASH_SELF
+        iptables -t mangle -X CLASH_SELF
+
+        ip route del local default dev lo table 100
+        ip rule del table 100
+    else
+        echo "unknown firewall, ignore"
+    fi
+}
+
+case $1 in
+start)
+    start
+    ;;
+stop)
+    stop
+    ;;
+esac
