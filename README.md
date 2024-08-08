@@ -102,6 +102,10 @@ You can access the Clash Web UI at:
 http://ROUTER_IP:9090/ui/
 ```
 
+<p align="center">
+ <img src="scr-01.png" width="100%">
+</p>
+
 # Remove Clash
 To remove Clash, stop the service and delete the related files.
 
