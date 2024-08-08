@@ -1,0 +1,36 @@
+#!/bin/sh /etc/rc.common
+
+START=21
+STOP=89
+
+USE_PROCD=1
+
+start_service() {
+        procd_open_instance
+        procd_set_param command /opt/clash/bin/clash -d /opt/clash
+        procd_set_param respawn
+        procd_close_instance
+
+        uci add_list dhcp.@dnsmasq[0].server='127.0.0.1#7874'
+        uci set dhcp.@dnsmasq[0].cachesize='0'
+        uci set dhcp.@dnsmasq[0].noresolv='1'
+        uci commit
+
+        /opt/clash/bin/clash-rules start
+        /etc/init.d/dnsmasq restart
+}
+
+stop_service() {
+        uci del dhcp.@dnsmasq[0].server
+        uci del dhcp.@dnsmasq[0].cachesize
+        uci del dhcp.@dnsmasq[0].noresolv
+        uci commit
+
+        /opt/clash/bin/clash-rules stop
+        /etc/init.d/dnsmasq restart
+}
+
+boot() {
+        sleep 10
+        start
+}

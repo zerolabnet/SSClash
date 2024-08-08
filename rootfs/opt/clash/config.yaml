@@ -1,0 +1,111 @@
+mode: rule
+ipv6: false
+log-level: error
+allow-lan: false
+mixed-port: 7890
+tproxy-port: 7894
+unified-delay: false
+tcp-concurrent: true
+external-controller: 0.0.0.0:9090
+external-ui: ./ui
+
+dns:
+  enable: true
+  listen: 0.0.0.0:7874
+  ipv6: false
+  # Bootstrap DNS
+  default-nameserver:
+    - 1.1.1.1
+    - 1.0.0.1
+    - 8.8.8.8
+    - 8.8.4.4
+  # Upstream DNS
+  nameserver:
+    - https://dns10.quad9.net/dns-query
+    - https://dns.aa.net.uk/dns-query
+
+profile:
+  store-selected: true
+  store-fake-ip: true
+
+routing-mark: 2
+
+find-process-mode: off
+
+sniffer:
+  enable: true
+  sniff:
+    TLS:
+      ports: [443, 8443]
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+  skip-domain:
+    - Mijia Cloud
+    - 'dlg.io.mi.com'
+
+proxies:
+  # vless
+  - name: "XX-reality"
+    type: vless
+    server: change-it
+    port: 443
+    uuid: change-it
+    network: tcp
+    tls: true
+    udp: true
+    flow: xtls-rprx-vision
+    servername: change-it
+    reality-opts:
+      public-key: change-it
+      short-id: change-it
+    client-fingerprint: chrome
+
+proxy-groups:
+  # select is used for selecting proxy or proxy group
+  # you can use RESTful API to switch proxy is recommended for use in GUI.
+  - name: PROXY
+    type: select
+    # disable-udp: true
+    proxies:
+      - SRV-reality
+
+rule-providers:
+  direct-domain:
+    behavior: classical
+    type: http
+    url: "https://YOUR_URL/direct-domain.yaml"
+    interval: 3600
+    path: ./ruleset/direct-domain.yaml
+  direct-ip:
+    behavior: classical
+    type: http
+    url: "https://YOUR_URL/direct-ip.yaml"
+    interval: 3600
+    path: ./ruleset/direct-ip.yaml
+  proxy-domain:
+    behavior: classical
+    type: http
+    url: "https://YOUR_URL/proxy-domain.yaml"
+    interval: 3600
+    path: ./ruleset/proxy-domain.yaml
+  proxy-ip:
+    behavior: classical
+    type: http
+    url: "https://YOUR_URL/proxy-ip.yaml"
+    interval: 3600
+    path: ./ruleset/proxy-ip.yaml
+  antifilter-ip:
+    behavior: classical
+    type: http
+    url: "https://YOUR_URL/antifilter-ip.yaml"
+    interval: 43200
+    path: ./ruleset/antifilter-ip.yaml
+
+rules:
+  - RULE-SET,direct-domain,DIRECT
+  - RULE-SET,proxy-domain,PROXY
+  - RULE-SET,direct-ip,DIRECT
+  - RULE-SET,proxy-ip,PROXY
+  - RULE-SET,antifilter-ip,PROXY
+  - MATCH,DIRECT
