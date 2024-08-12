@@ -68,7 +68,7 @@ proxy-groups:
     type: select
     # disable-udp: true
     proxies:
-      - SRV-reality
+      - XX-reality
 
 rule-providers:
   direct-domain:
