@@ -31,7 +31,7 @@ profile:
   store-fake-ip: true
 
 # Provides a default traffic mark for outbound connections on Linux
-routing-mark: 2
+routing-mark: 2 # To avoid cyclic redirection
 
 find-process-mode: off
 

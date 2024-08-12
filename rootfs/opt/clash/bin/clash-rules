@@ -48,7 +48,7 @@ start(){
         iptables -t mangle -A CLASH_SELF -o veth+ -j RETURN
         iptables -t mangle -A CLASH_SELF -i docker+ -j RETURN
         iptables -t mangle -A CLASH_SELF -o docker+ -j RETURN
-        iptables -t mangle -A CLASH_SELF -m mark --mark 2 -j RETURN
+        iptables -t mangle -A CLASH_SELF -m mark --mark 2 -j RETURN # To avoid cyclic redirection
         iptables -t mangle -A CLASH_SELF -p tcp -j MARK --set-mark 1
         iptables -t mangle -A CLASH_SELF -p udp -j MARK --set-mark 1
         iptables -t mangle -A OUTPUT -j CLASH_SELF
