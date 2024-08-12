@@ -9,6 +9,8 @@ tcp-concurrent: true
 external-controller: 0.0.0.0:9090
 external-ui: ./ui
 
+# DNS server settings
+# This section is optional. When not present, the DNS server will be disabled.
 dns:
   enable: true
   listen: 0.0.0.0:7874
@@ -28,6 +30,7 @@ profile:
   store-selected: true
   store-fake-ip: true
 
+# Provides a default traffic mark for outbound connections on Linux
 routing-mark: 2
 
 find-process-mode: off
@@ -46,66 +49,82 @@ sniffer:
 
 proxies:
   # vless
-  - name: "XX-reality"
+  - name: "XX-reality" # change it
     type: vless
-    server: change-it
+    server: xx-reality-server.example.com # change it
     port: 443
-    uuid: change-it
+    uuid: 528aeb97-a633-468d-81f7-8185d26bcb64 # change it
     network: tcp
     tls: true
     udp: true
     flow: xtls-rprx-vision
-    servername: change-it
+    servername: masking-domain.example.com # change it
     reality-opts:
-      public-key: change-it
-      short-id: change-it
+      public-key: 2R_qtReOBExLOx1aZj8s4N8x-Ru_wbo-o2neemZEDB0 # change it
+      short-id: ae380de2eeded283 # change it
     client-fingerprint: chrome
 
 proxy-groups:
-  # select is used for selecting proxy or proxy group
-  # you can use RESTful API to switch proxy is recommended for use in GUI.
+  # Select (used for selecting proxy or proxy group)
   - name: PROXY
     type: select
     # disable-udp: true
     proxies:
-      - XX-reality
+      - XX-reality # change it, add the others
+
+  # Fallback
+  - name: FALLBACK
+    type: fallback
+    proxies:
+    - XX-reality # change it, add the others
+    url: 'https://www.gstatic.com/generate_204' # or https://cp.cloudflare.com/generate_204
+    interval: 300
+
+  # # Load-balance
+  # - name: LB-PROXY
+  #   type: load-balance
+  #   proxies:
+  #   - XX-reality # change it, add the others
+  #   url: 'https://www.gstatic.com/generate_204'
+  #   interval: 300
+  #   strategy: consistent-hashing # or round-robin
 
 rule-providers:
   direct-domain:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/direct-domain.yaml"
+    url: "https://YOUR_URL/direct-domain.yaml" # change it
     interval: 3600
     path: ./ruleset/direct-domain.yaml
   direct-ip:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/direct-ip.yaml"
+    url: "https://YOUR_URL/direct-ip.yaml" # change it
     interval: 3600
     path: ./ruleset/direct-ip.yaml
   proxy-domain:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/proxy-domain.yaml"
+    url: "https://YOUR_URL/proxy-domain.yaml" # change it
     interval: 3600
     path: ./ruleset/proxy-domain.yaml
   proxy-ip:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/proxy-ip.yaml"
+    url: "https://YOUR_URL/proxy-ip.yaml" # change it
     interval: 3600
     path: ./ruleset/proxy-ip.yaml
   antifilter-ip:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/antifilter-ip.yaml"
+    url: "https://YOUR_URL/antifilter-ip.yaml" # change it
     interval: 43200
     path: ./ruleset/antifilter-ip.yaml
 
 rules:
   - RULE-SET,direct-domain,DIRECT
-  - RULE-SET,proxy-domain,PROXY
   - RULE-SET,direct-ip,DIRECT
+  - RULE-SET,proxy-domain,PROXY
   - RULE-SET,proxy-ip,PROXY
   - RULE-SET,antifilter-ip,PROXY
   - MATCH,DIRECT
