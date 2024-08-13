@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Add delay
+sleep 10
+
 # API IP address and port
 api_base_url="http://192.168.1.1:9090"
 

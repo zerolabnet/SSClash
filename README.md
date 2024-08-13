@@ -133,8 +133,11 @@ vi /etc/hotplug.d/iface/40-clash_rules
 
 2. [Insert the following script content](https://raw.githubusercontent.com/zerolabnet/ssclash/main/update_all_rule_providers.sh) (change `api_base_url` if needed):
 
-```bash
+```sh
 #!/bin/sh
+
+# Add delay
+sleep 10
 
 # API IP address and port
 api_base_url="http://192.168.1.1:9090"
