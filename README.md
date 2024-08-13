@@ -35,7 +35,7 @@ cd /opt/clash
 Download the ssclash package and extract it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.0/ssclash-v1.1.tar.gz -o ssclash-v1.1.tar.gz
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.1/ssclash-v1.1.tar.gz -o ssclash-v1.1.tar.gz
 tar zxvf ssclash-v1.1.tar.gz
 ```
 
