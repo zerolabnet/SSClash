@@ -116,3 +116,58 @@ To remove Clash, stop the service, delete the related files and kernel module `k
 rm -rf /etc/init.d/clash
 rm -rf /opt/clash
 ```
+
+---
+
+# Extra info (optional): Automating Clash Rules Update in OpenWrt whenever the Internet interface is brought up
+
+To automatically update the rules for Clash whenever the Internet interface is brought up in OpenWrt, follow these step:
+
+## Create the Shell Script
+
+1. Open a terminal and create a new shell script named `40-clash_rules` in the `/etc/hotplug.d/iface/` directory:
+
+```bash
+vi /etc/hotplug.d/iface/40-clash_rules
+```
+
+2. [Insert the following script content](https://raw.githubusercontent.com/zerolabnet/ssclash/main/update_all_rule_providers.sh) (change `api_base_url` if needed):
+
+```bash
+#!/bin/sh
+
+# API IP address and port
+api_base_url="http://192.168.1.1:9090"
+
+# API URL
+base_url="$api_base_url/providers/rules"
+
+# Get JSON response with provider names
+response=$(curl -s "$base_url")
+
+# Extract provider names using standard utilities
+providers=$(echo "$response" | grep -o '"name":"[^"]*"' | sed 's/"name":"\([^"]*\)"/\1/')
+
+# Check if data retrieval was successful
+if [ -z "$providers" ]; then
+  echo "Failed to retrieve providers or no providers found."
+  exit 1
+fi
+
+# Loop through each provider name and send PUT request to update
+for provider in $providers; do
+  echo "Updating provider: $provider"
+  curl -X PUT "$base_url/$provider"
+
+  # Check success and output the result
+  if [ $? -eq 0 ]; then
+    echo "Successfully updated $provider"
+  else
+    echo "Failed to update $provider"
+  fi
+done
+```
+
+3. Save and exit the editor.
+
+The script will now automatically run whenever the Internet interface is brought up. This ensures that the rules for Clash are updated as soon as the router is rebooted and connected to the Internet.
