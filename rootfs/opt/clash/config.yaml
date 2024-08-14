@@ -19,7 +19,7 @@ dns:
   # Upstream DNS
   nameserver: [https://dns10.quad9.net/dns-query, https://dns.aa.net.uk/dns-query]
 
-find-process-mode: off
+# find-process-mode: off
 # global-client-fingerprint: chrome
 
 profile:
