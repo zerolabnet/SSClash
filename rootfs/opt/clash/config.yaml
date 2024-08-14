@@ -16,15 +16,12 @@ dns:
   listen: 0.0.0.0:7874
   ipv6: false
   # Bootstrap DNS
-  default-nameserver:
-    - 1.1.1.1
-    - 1.0.0.1
-    - 8.8.8.8
-    - 8.8.4.4
+  default-nameserver: [1.1.1.1, 1.0.0.1, 8.8.8.8, 8.8.4.4]
   # Upstream DNS
-  nameserver:
-    - https://dns10.quad9.net/dns-query
-    - https://dns.aa.net.uk/dns-query
+  nameserver: [https://dns10.quad9.net/dns-query, https://dns.aa.net.uk/dns-query]
+
+find-process-mode: off
+# global-client-fingerprint: chrome
 
 profile:
   store-selected: true
@@ -33,25 +30,24 @@ profile:
 # Provides a default traffic mark for outbound connections on Linux
 routing-mark: 2 # To avoid cyclic redirection
 
-find-process-mode: off
-
 sniffer:
   enable: true
   sniff:
-    TLS:
-      ports: [443, 8443]
     HTTP:
       ports: [80, 8080-8880]
       override-destination: true
+    TLS:
+      ports: [443, 8443]
+    # QUIC:
+    #   ports: [443, 8443]
   skip-domain:
-    - Mijia Cloud
-    - 'dlg.io.mi.com'
+    - "Mijia Cloud"
 
 proxies:
   # vless
   - name: "XX-reality" # change it
     type: vless
-    server: xx-reality-server.example.com # change it
+    server: xx-reality-server-IP # change it
     port: 443
     uuid: 528aeb97-a633-468d-81f7-8185d26bcb64 # change it
     network: tcp
@@ -76,7 +72,7 @@ proxy-groups:
   - name: FALLBACK
     type: fallback
     proxies:
-    - XX-reality # change it, add the others
+      - XX-reality # change it, add the others
     url: 'https://www.gstatic.com/generate_204' # or https://cp.cloudflare.com/generate_204
     interval: 300
 
@@ -84,7 +80,7 @@ proxy-groups:
   # - name: LB-PROXY
   #   type: load-balance
   #   proxies:
-  #   - XX-reality # change it, add the others
+  #     - XX-reality # change it, add the others
   #   url: 'https://www.gstatic.com/generate_204'
   #   interval: 300
   #   strategy: consistent-hashing # or round-robin
@@ -94,25 +90,25 @@ rule-providers:
     behavior: classical
     type: http
     url: "https://YOUR_URL/direct-domain.yaml" # change it
-    interval: 3600
+    interval: 1800
     path: ./ruleset/direct-domain.yaml
   direct-ip:
     behavior: classical
     type: http
     url: "https://YOUR_URL/direct-ip.yaml" # change it
-    interval: 3600
+    interval: 1800
     path: ./ruleset/direct-ip.yaml
   proxy-domain:
     behavior: classical
     type: http
     url: "https://YOUR_URL/proxy-domain.yaml" # change it
-    interval: 3600
+    interval: 1800
     path: ./ruleset/proxy-domain.yaml
   proxy-ip:
     behavior: classical
     type: http
     url: "https://YOUR_URL/proxy-ip.yaml" # change it
-    interval: 3600
+    interval: 1800
     path: ./ruleset/proxy-ip.yaml
   antifilter-ip:
     behavior: classical
