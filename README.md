@@ -75,30 +75,22 @@ gunzip clash.gz
 chmod +x clash
 ```
 
-## Step 8: Edit Configuration File
-Edit the `config.yaml` example file.
-
-```bash
-vi /opt/clash/config.yaml
-```
-
-## Step 9: Set Up an SFTP Server (Optional)
-For easier editing of files, set up an SFTP server.
-
-```bash
-opkg install openssh-sftp-server
-```
-
-## Step 10: Enable and Start Clash
-Enable and start the Clash service.
+## Step 8: Enable Clash
+Enable the Clash service.
 
 ```bash
 /etc/init.d/clash enable
-/etc/init.d/clash start
 ```
 
-## Step 11: Access Web UI
-You can access the Clash Web UI at:
+## Step 9: Managing Clash from LUCI interface
+I've written a simple interface for managing Clash from LUCI interface `luci-app-ssclash`. Edit Clash config and Apply.
+
+<p align="center">
+ <img src="scr-00.png" width="100%">
+</p>
+
+## Step 10: You can access to Dashboard from LUCI interface or manual
+You can access the Dashboard at:
 
 ```
 http://ROUTER_IP:9090/ui/
@@ -113,8 +105,11 @@ To remove Clash, stop the service, delete the related files and kernel module `k
 
 ```bash
 /etc/init.d/clash stop
-rm -rf /etc/init.d/clash
+rm -f /etc/init.d/clash
 rm -rf /opt/clash
+rm -f /usr/share/luci/menu.d/luci-app-ssclash.json
+rm -f /usr/share/rpcd/acl.d/luci-app-ssclash.json
+rm -rf /www/luci-static/resources/view/ssclash
 ```
 
 ---
