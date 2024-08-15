@@ -35,8 +35,8 @@ cd /opt/clash
 Download the ssclash package and extract it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.1/ssclash-v1.1.tar.gz -o ssclash-v1.1.tar.gz
-tar zxvf ssclash-v1.1.tar.gz
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.2/ssclash-v1.2.tar.gz -o ssclash-v1.2.tar.gz
+tar zxvf ssclash-v1.2.tar.gz
 ```
 
 ## Step 5: Move Files to Appropriate Directories
@@ -46,7 +46,7 @@ Move the necessary files to their respective directories.
 mv rootfs/etc/init.d/clash /etc/init.d/
 mv rootfs/opt/clash/* .
 rm -rf rootfs
-rm -rf ssclash-v1.1.tar.gz
+rm -rf ssclash-v1.2.tar.gz
 ```
 
 ## Step 6: Download Clash.Meta Kernel
