@@ -1,0 +1,26 @@
+{
+	"luci-app-ssclash": {
+		"description": "Grant access to Clash procedures",
+		"read": {
+			"file": {
+				"/opt/clash/config.yaml": [ "read" ],
+				"/sbin/logread": [ "exec" ]
+			},
+			"ubus": {
+				"file": [ "read" ],
+				"service": [ "list" ]
+			}
+		},
+		"write": {
+			"file": {
+				"/opt/clash/config.yaml": [ "write" ],
+				"/etc/init.d/clash start": [ "exec" ],
+				"/etc/init.d/clash stop": [ "exec" ],
+				"/etc/init.d/clash reload": [ "exec" ]
+			},
+			"ubus": {
+				"file": [ "write" ]
+			}
+		}
+	}
+}

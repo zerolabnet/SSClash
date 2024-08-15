@@ -1,0 +1,28 @@
+{
+	"admin/services/ssclash": {
+		"title": "ssclash",
+		"action": {
+			"type": "alias",
+			"path": "admin/services/ssclash/config"
+		},
+		"depends": {
+			"acl": [ "luci-app-ssclash" ]
+		}
+	},
+	"admin/services/ssclash/config": {
+		"title": "Config",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "ssclash/config"
+		}
+	},
+	"admin/services/ssclash/log": {
+		"title": "Log",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "ssclash/log"
+		}
+	}
+}
