@@ -23,33 +23,15 @@ opkg install kmod-nft-tproxy
 
 For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
 
-## Step 3: Set Up Clash Directory
-Create the Clash directory and navigate to it.
+## Step 3: Download and Install `luci-app-ssclash` Package
+Download the ssclash package and install it.
 
 ```bash
-mkdir -p /opt/clash
-cd /opt/clash
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.2/luci-app-ssclash_1.2-1_all.ipk -o /tmp/luci-app-ssclash_1.2-1_all.ipk
+opkg install luci-app-ssclash_1.2-1_all.ipk
 ```
 
-## Step 4: Download and Extract Clash Package
-Download the ssclash package and extract it.
-
-```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.2/ssclash-v1.2.tar.gz -o ssclash-v1.2.tar.gz
-tar zxvf ssclash-v1.2.tar.gz
-```
-
-## Step 5: Move Files to Appropriate Directories
-Move the necessary files to their respective directories.
-
-```bash
-mv rootfs/etc/init.d/clash /etc/init.d/
-mv rootfs/opt/clash/* .
-rm -rf rootfs
-rm -rf ssclash-v1.2.tar.gz
-```
-
-## Step 6: Download Clash.Meta Kernel
+## Step 4: Download Clash.Meta Kernel
 Navigate to the `bin` directory and download the Clash.Meta Kernel. Choose the appropriate architecture.
 
 For **amd64** architecture:
@@ -67,7 +49,7 @@ curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.18.7/mihomo-lin
 
 Need a different architecture? Visit the [MetaCubeX Release Page](https://github.com/MetaCubeX/mihomo/releases) and choose the one that matches your device.
 
-## Step 7: Prepare the Clash Binary
+## Step 5: Prepare the Clash Binary
 Decompress the downloaded file and make it executable.
 
 ```bash
@@ -75,21 +57,21 @@ gunzip clash.gz
 chmod +x clash
 ```
 
-## Step 8: Enable Clash
+## Step 6: Enable Clash
 Enable the Clash service.
 
 ```bash
 /etc/init.d/clash enable
 ```
 
-## Step 9: Managing Clash from LuCI interface
+## Step 7: Managing Clash from LuCI interface
 I've written a simple interface for managing Clash from LuCI interface `luci-app-ssclash`. Edit Clash config and Apply.
 
 <p align="center">
  <img src="scr-00.png" width="100%">
 </p>
 
-## Step 10: You can access to Dashboard from LuCI interface or manual
+## Step 8: You can access to Dashboard from LuCI interface or manual
 You can access the Dashboard at:
 
 ```
