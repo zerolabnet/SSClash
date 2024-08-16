@@ -32,7 +32,7 @@ opkg install /tmp/luci-app-ssclash_1.2-1_all.ipk
 rm /tmp/*.ipk
 ```
 
-Stop the service until you have edited the configuration.
+Stop the service until you edit the configuration.
 
 ```bash
 /etc/init.d/clash stop
