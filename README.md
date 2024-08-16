@@ -28,7 +28,8 @@ Download the ssclash package and install it.
 
 ```bash
 curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.2/luci-app-ssclash_1.2-1_all.ipk -o /tmp/luci-app-ssclash_1.2-1_all.ipk
-opkg install luci-app-ssclash_1.2-1_all.ipk
+opkg install /tmp/luci-app-ssclash_1.2-1_all.ipk
+rm /tmp/*.ipk
 ```
 
 ## Step 4: Download Clash.Meta Kernel
@@ -83,16 +84,13 @@ http://ROUTER_IP:9090/ui/
 </p>
 
 # Remove Clash
-To remove Clash, stop the service, delete the related files and kernel module `kmod-nft-tproxy` or `iptables-mod-tproxy`.
+To remove Clash, delete the related files, `luci-app-ssclash` package and kernel module `kmod-nft-tproxy` or `iptables-mod-tproxy`.
 
 ```bash
 /etc/init.d/clash stop
 /etc/init.d/clash disable
-rm -f /etc/init.d/clash
-rm -rf /opt/clash
-rm -f /usr/share/luci/menu.d/luci-app-ssclash.json
-rm -f /usr/share/rpcd/acl.d/luci-app-ssclash.json
-rm -rf /www/luci-static/resources/view/ssclash
+rm -f /opt/clash/bin/clash
+opkg remove luci-app-ssclash kmod-nft-tproxy
 ```
 
 ---
