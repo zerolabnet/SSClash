@@ -32,6 +32,12 @@ opkg install /tmp/luci-app-ssclash_1.2-1_all.ipk
 rm /tmp/*.ipk
 ```
 
+Stop the service until you have edited the configuration.
+
+```bash
+/etc/init.d/clash stop
+```
+
 ## Step 4: Download Clash.Meta Kernel
 Navigate to the `bin` directory and download the Clash.Meta Kernel. Choose the appropriate architecture.
 
@@ -61,21 +67,14 @@ gunzip clash.gz
 chmod +x clash
 ```
 
-## Step 6: Enable Clash
-Enable the Clash service.
-
-```bash
-/etc/init.d/clash enable
-```
-
-## Step 7: Managing Clash from LuCI interface
+## Step 6: Managing Clash from LuCI interface
 I've written a simple interface for managing Clash from LuCI interface `luci-app-ssclash`. Edit Clash config and Apply.
 
 <p align="center">
  <img src="scr-00.png" width="100%">
 </p>
 
-## Step 8: You can access to Dashboard from LuCI interface or manual
+## Step 7: You can access to Dashboard from LuCI interface or manual
 You can access the Dashboard at:
 
 ```
