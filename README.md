@@ -82,14 +82,14 @@ Enable the Clash service.
 /etc/init.d/clash enable
 ```
 
-## Step 9: Managing Clash from LUCI interface
-I've written a simple interface for managing Clash from LUCI interface `luci-app-ssclash`. Edit Clash config and Apply.
+## Step 9: Managing Clash from LuCI interface
+I've written a simple interface for managing Clash from LuCI interface `luci-app-ssclash`. Edit Clash config and Apply.
 
 <p align="center">
  <img src="scr-00.png" width="100%">
 </p>
 
-## Step 10: You can access to Dashboard from LUCI interface or manual
+## Step 10: You can access to Dashboard from LuCI interface or manual
 You can access the Dashboard at:
 
 ```
