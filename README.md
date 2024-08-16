@@ -35,10 +35,13 @@ rm /tmp/*.ipk
 ## Step 4: Download Clash.Meta Kernel
 Navigate to the `bin` directory and download the Clash.Meta Kernel. Choose the appropriate architecture.
 
+```bash
+cd /opt/clash/bin
+```
+
 For **amd64** architecture:
 
 ```bash
-cd /opt/clash/bin
 curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.18.7/mihomo-linux-amd64-compatible-v1.18.7.gz -o clash.gz
 ```
 
