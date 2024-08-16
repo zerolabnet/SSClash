@@ -16,6 +16,8 @@
 				"/opt/clash/config.yaml": [ "write" ],
 				"/etc/init.d/clash start": [ "exec" ],
 				"/etc/init.d/clash stop": [ "exec" ],
+				"/etc/init.d/clash enable": [ "exec" ],
+				"/etc/init.d/clash disable": [ "exec" ],
 				"/etc/init.d/clash reload": [ "exec" ]
 			},
 			"ubus": {

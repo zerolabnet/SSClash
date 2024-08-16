@@ -25,8 +25,9 @@ async function getServiceStatus() {
 async function startService() {
 	if (startStopButton) startStopButton.disabled = true;
 	return fs.exec('/etc/init.d/clash', ['start'])
+		.then(() => fs.exec('/etc/init.d/clash', ['enable']))
 		.catch(function(e) {
-			ui.addNotification(null, E('p', _('Unable to start service: %s').format(e.message)), 'error');
+			ui.addNotification(null, E('p', _('Unable to start and enable service: %s').format(e.message)), 'error');
 		})
 		.finally(() => {
 			if (startStopButton) startStopButton.disabled = false;
@@ -36,8 +37,9 @@ async function startService() {
 async function stopService() {
 	if (startStopButton) startStopButton.disabled = true;
 	return fs.exec('/etc/init.d/clash', ['stop'])
+		.then(() => fs.exec('/etc/init.d/clash', ['disable']))
 		.catch(function(e) {
-			ui.addNotification(null, E('p', _('Unable to stop service: %s').format(e.message)), 'error');
+			ui.addNotification(null, E('p', _('Unable to stop and disable service: %s').format(e.message)), 'error');
 		})
 		.finally(() => {
 			if (startStopButton) startStopButton.disabled = false;
@@ -58,7 +60,11 @@ async function openDashboard() {
 	let newWindow = window.open('', '_blank');
 	const running = await getServiceStatus();
 	if (running) {
-		let url = `http://${window.location.hostname}:9090/ui/?hostname=${window.location.hostname}&port=9090`;
+		let port = '9090';
+		let path = 'ui';
+		let protocol = window.location.protocol;
+		let hostname = window.location.hostname;
+		let url = `${protocol}//${hostname}:${port}/${path}/?hostname=${hostname}&port=${port}`;
 		newWindow.location.href = url;
 	} else {
 		newWindow.close();
