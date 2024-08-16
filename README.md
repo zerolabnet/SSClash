@@ -105,6 +105,7 @@ To remove Clash, stop the service, delete the related files and kernel module `k
 
 ```bash
 /etc/init.d/clash stop
+/etc/init.d/clash disable
 rm -f /etc/init.d/clash
 rm -rf /opt/clash
 rm -f /usr/share/luci/menu.d/luci-app-ssclash.json
