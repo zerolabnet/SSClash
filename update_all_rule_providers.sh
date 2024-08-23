@@ -33,3 +33,6 @@ for provider in $providers; do
     echo "Failed to update $provider"
   fi
 done
+
+# Service restart
+/etc/init.d/clash reload
