@@ -27,7 +27,7 @@ profile:
   store-fake-ip: true
 
 # Provides a default traffic mark for outbound connections on Linux
-routing-mark: 2 # To avoid cyclic redirection
+routing-mark: 2 # Prevent cyclic redirection
 
 sniffer:
   enable: true
