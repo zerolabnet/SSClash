@@ -1,92 +1,93 @@
 #!/bin/sh
 
-start(){
-    if hash nft; then
+start() {
+    if hash nft 2>/dev/null; then
         nft -f /opt/clash/nft.conf
         ip route add local default dev lo table 100
         ip rule add fwmark 1 table 100
-    elif hash iptables; then
+    elif hash iptables 2>/dev/null; then
+        # Block QUIC first (for YouTube)
+        iptables -t filter -I INPUT -p udp --dport 443 -j REJECT
+        iptables -t filter -I FORWARD -p udp --dport 443 -j REJECT
+
         iptables -t mangle -N CLASH
-        iptables -t mangle -I CLASH -p udp --dport 443 -j REJECT # Block QUIC first (for YouTube)
-        iptables -t mangle -A CLASH -d 0.0.0.0/8 -j RETURN
-        iptables -t mangle -A CLASH -d 10.0.0.0/8 -j RETURN
-        iptables -t mangle -A CLASH -d 100.64.0.0/10 -j RETURN
-        iptables -t mangle -A CLASH -d 127.0.0.0/8 -j RETURN
-        iptables -t mangle -A CLASH -d 169.254.0.0/16 -j RETURN
-        iptables -t mangle -A CLASH -d 172.16.0.0/12 -j RETURN
-        iptables -t mangle -A CLASH -d 192.168.0.0/16 -j RETURN
-        iptables -t mangle -A CLASH -d 224.0.0.0/4 -j RETURN
-        iptables -t mangle -A CLASH -d 240.0.0.0/4 -j RETURN
-        iptables -t mangle -A CLASH -i wg+ -j RETURN
-        iptables -t mangle -A CLASH -o wg+ -j RETURN
-        iptables -t mangle -A CLASH -i ppp+ -j RETURN
-        iptables -t mangle -A CLASH -o ppp+ -j RETURN
-        iptables -t mangle -A CLASH -i veth+ -j RETURN
-        iptables -t mangle -A CLASH -o veth+ -j RETURN
-        iptables -t mangle -A CLASH -i docker+ -j RETURN
-        iptables -t mangle -A CLASH -o docker+ -j RETURN
-        iptables -t mangle -A CLASH -p tcp -j TPROXY --on-port 7894 --tproxy-mark 1
-        iptables -t mangle -A CLASH -p udp -j TPROXY --on-port 7894 --tproxy-mark 1
-        iptables -t mangle -A PREROUTING -m addrtype --dst-type LOCAL -j RETURN
+        iptables -t mangle -N CLASH_LOCAL
+
+        # Exclude local networks in CLASH
+        for addr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
+            iptables -t mangle -A CLASH -d $addr -j RETURN
+        done
+
+        # Exclude interfaces in CLASH
+        for intf in wg+ ppp+ veth+ docker+; do
+            iptables -t mangle -A CLASH -i $intf -j RETURN
+            iptables -t mangle -A CLASH -o $intf -j RETURN
+        done
+
+        # TPROXY rules
+        iptables -t mangle -A CLASH -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 1
+        iptables -t mangle -A CLASH -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 1
+
         iptables -t mangle -A PREROUTING -j CLASH
 
-        iptables -t mangle -N CLASH_SELF
-        iptables -t mangle -A CLASH_SELF -d 0.0.0.0/8 -j RETURN
-        iptables -t mangle -A CLASH_SELF -d 10.0.0.0/8 -j RETURN
-        iptables -t mangle -A CLASH_SELF -d 100.64.0.0/10 -j RETURN
-        iptables -t mangle -A CLASH_SELF -d 127.0.0.0/8 -j RETURN
-        iptables -t mangle -A CLASH_SELF -d 169.254.0.0/16 -j RETURN
-        iptables -t mangle -A CLASH_SELF -d 172.16.0.0/12 -j RETURN
-        iptables -t mangle -A CLASH_SELF -d 192.168.0.0/16 -j RETURN
-        iptables -t mangle -A CLASH_SELF -d 224.0.0.0/4 -j RETURN
-        iptables -t mangle -A CLASH_SELF -d 240.0.0.0/4 -j RETURN
-        iptables -t mangle -A CLASH_SELF -i wg+ -j RETURN
-        iptables -t mangle -A CLASH_SELF -o wg+ -j RETURN
-        iptables -t mangle -A CLASH_SELF -i ppp+ -j RETURN
-        iptables -t mangle -A CLASH_SELF -o ppp+ -j RETURN
-        iptables -t mangle -A CLASH_SELF -i veth+ -j RETURN
-        iptables -t mangle -A CLASH_SELF -o veth+ -j RETURN
-        iptables -t mangle -A CLASH_SELF -i docker+ -j RETURN
-        iptables -t mangle -A CLASH_SELF -o docker+ -j RETURN
-        iptables -t mangle -A CLASH_SELF -m mark --mark 2 -j RETURN # To avoid cyclic redirection
-        iptables -t mangle -A CLASH_SELF -p tcp -j MARK --set-mark 1
-        iptables -t mangle -A CLASH_SELF -p udp -j MARK --set-mark 1
-        iptables -t mangle -A OUTPUT -j CLASH_SELF
+        # Exclude local networks in CLASH_LOCAL
+        for addr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
+            iptables -t mangle -A CLASH_LOCAL -d $addr -j RETURN
+        done
+
+        # Exclude interfaces in CLASH_LOCAL
+        for intf in wg+ ppp+ veth+ docker+; do
+            iptables -t mangle -A CLASH_LOCAL -i $intf -j RETURN
+            iptables -t mangle -A CLASH_LOCAL -o $intf -j RETURN
+        done
+
+        # Prevent cyclic redirection
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 2 -j RETURN
+
+        # Mark packets for routing
+        iptables -t mangle -A CLASH_LOCAL -p tcp -j MARK --set-mark 1
+        iptables -t mangle -A CLASH_LOCAL -p udp -j MARK --set-mark 1
+        iptables -t mangle -A OUTPUT -j CLASH_LOCAL
 
         ip route add local default dev lo table 100
         ip rule add fwmark 1 table 100
     else
-        echo "unknown firewall, ignore"
+        echo "Unknown firewall, ignoring."
     fi
 }
 
-stop(){
-    if hash nft; then
-        nft table ip clash
+stop() {
+    if hash nft 2>/dev/null; then
         nft delete table ip clash
         ip route del local default dev lo table 100
         ip rule del table 100
-    elif hash iptables; then
+    elif hash iptables 2>/dev/null; then
+        iptables -t filter -D INPUT -p udp --dport 443 -j REJECT
+        iptables -t filter -D FORWARD -p udp --dport 443 -j REJECT
         iptables -t mangle -D PREROUTING -j CLASH
         iptables -t mangle -F CLASH
         iptables -t mangle -X CLASH
 
-        iptables -t mangle -D OUTPUT -j CLASH_SELF
-        iptables -t mangle -F CLASH_SELF
-        iptables -t mangle -X CLASH_SELF
+        iptables -t mangle -D OUTPUT -j CLASH_LOCAL
+        iptables -t mangle -F CLASH_LOCAL
+        iptables -t mangle -X CLASH_LOCAL
 
         ip route del local default dev lo table 100
         ip rule del table 100
     else
-        echo "unknown firewall, ignore"
+        echo "Unknown firewall, ignoring."
     fi
 }
 
-case $1 in
-start)
-    start
-    ;;
-stop)
-    stop
-    ;;
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
 esac
