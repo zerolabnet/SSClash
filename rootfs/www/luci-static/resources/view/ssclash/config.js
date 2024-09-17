@@ -6,6 +6,7 @@
 
 var isReadonlyView = !L.hasViewPermission() || null;
 let startStopButton = null;
+let editor = null;
 
 const callServiceList = rpc.declare({
 	object: 'service',
@@ -72,14 +73,38 @@ async function openDashboard() {
 	}
 }
 
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
+async function initializeAceEditor(content) {
+    await loadScript('/luci-static/resources/view/ssclash/ace/ace.js');
+    ace.config.set('basePath', '/luci-static/resources/view/ssclash/ace/');
+    editor = ace.edit("editor");
+    editor.setTheme("ace/theme/tomorrow_night_bright");
+    editor.session.setMode("ace/mode/yaml");
+    editor.setValue(content);
+    editor.clearSelection();
+    editor.setOptions({
+        fontSize: "12px",
+        showPrintMargin: false,
+        wrap: true
+    });
+}
+
 return view.extend({
 	load: function() {
 		return L.resolveDefault(fs.read('/opt/clash/config.yaml'), '');
 	},
 	handleSaveApply: function(ev) {
-		var value = (document.querySelector('textarea').value || '').trim().replace(/\r\n/g, '\n') + '\n';
+		var value = editor.getValue().trim() + '\n';
 		return fs.write('/opt/clash/config.yaml', value).then(function(rc) {
-			document.querySelector('textarea').value = value;
 			ui.addNotification(null, E('p', _('Contents have been saved.')), 'info');
 			return fs.exec('/etc/init.d/clash', ['reload']);
 		}).then(function() {
@@ -91,7 +116,7 @@ return view.extend({
 	render: async function(config) {
 		const running = await getServiceStatus();
 
-		return E([
+		const view = E([
 			E('button', {
 				'class': 'btn',
 				'click': openDashboard
@@ -106,12 +131,15 @@ return view.extend({
 			}, running ? _('Clash is running') : _('Clash stopped')),
 			E('h2', _('Clash config')),
 			E('p', { 'class': 'cbi-section-descr' }, _('Your current Clash config. When applied, the changes will be saved and the service will be restarted.')),
-			E('textarea', {
-				'style': 'width: 100% !important; padding: 5px; font-family: monospace',
-				'rows': 35,
-				'disabled': isReadonlyView
-			}, [config != null ? config : ''])
+			E('div', {
+				'id': 'editor',
+				'style': 'width: 100%; height: 640px;'
+			})
 		]);
+
+		initializeAceEditor(config);
+
+		return view;
 	},
 	handleSave: null,
 	handleReset: null
