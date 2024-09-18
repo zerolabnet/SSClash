@@ -27,8 +27,8 @@ For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
 Download the ssclash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.4/luci-app-ssclash_1.4-1_all.ipk -o /tmp/luci-app-ssclash_1.4-1_all.ipk
-opkg install /tmp/luci-app-ssclash_1.4-1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.5/luci-app-ssclash_1.5-1_all.ipk -o /tmp/luci-app-ssclash_1.5-1_all.ipk
+opkg install /tmp/luci-app-ssclash_1.5-1_all.ipk
 rm /tmp/*.ipk
 ```
 

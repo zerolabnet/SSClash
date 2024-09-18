@@ -3,7 +3,7 @@ ipv6: false
 log-level: error
 allow-lan: false
 tproxy-port: 7894
-unified-delay: false
+unified-delay: true
 tcp-concurrent: true
 external-controller: 0.0.0.0:9090
 external-ui: ./ui
@@ -15,9 +15,9 @@ dns:
   listen: 0.0.0.0:7874
   ipv6: false
   # Bootstrap DNS
-  default-nameserver: [1.1.1.1, 1.0.0.1, 8.8.8.8, 8.8.4.4]
+  default-nameserver: ['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4']
   # Upstream DNS
-  nameserver: [https://dns10.quad9.net/dns-query, https://dns.aa.net.uk/dns-query]
+  nameserver: ['https://dns10.quad9.net/dns-query', 'https://dns.aa.net.uk/dns-query']
 
 # find-process-mode: off
 # global-client-fingerprint: chrome
@@ -40,11 +40,11 @@ sniffer:
     # QUIC:
     #   ports: [443, 8443]
   skip-domain:
-    - "Mijia Cloud"
+    - 'Mijia Cloud'
 
 proxies:
   # vless
-  - name: "XX-reality" # change it
+  - name: 'XX-reality' # change it
     type: vless
     server: xx-reality-server-IP # change it
     port: 443
@@ -64,22 +64,19 @@ proxy-groups:
   - name: PROXY
     type: select
     # disable-udp: true
-    proxies:
-      - XX-reality # change it, add the others
+    proxies: [XX-reality] # change it, add the others
 
   # Fallback
   - name: FALLBACK
     type: fallback
-    proxies:
-      - XX-reality # change it, add the others
+    proxies: [XX-reality] # change it, add the others
     url: 'https://www.gstatic.com/generate_204' # or https://cp.cloudflare.com/generate_204
     interval: 300
 
   # # Load-balance
   # - name: LB-PROXY
   #   type: load-balance
-  #   proxies:
-  #     - XX-reality # change it, add the others
+  #   proxies: [XX-reality] # change it, add the others
   #   url: 'https://www.gstatic.com/generate_204'
   #   interval: 300
   #   strategy: consistent-hashing # or round-robin
@@ -88,33 +85,38 @@ rule-providers:
   direct-domain:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/direct-domain.yaml" # change it
+    format: text
+    url: 'https://YOUR_URL/direct-domain.list' # change it
     interval: 1800
-    path: ./ruleset/direct-domain.yaml
+    path: ./ruleset/direct-domain.txt
   direct-ip:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/direct-ip.yaml" # change it
+    format: text
+    url: 'https://YOUR_URL/direct-ip.list' # change it
     interval: 1800
-    path: ./ruleset/direct-ip.yaml
+    path: ./ruleset/direct-ip.txt
   proxy-domain:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/proxy-domain.yaml" # change it
+    format: text
+    url: 'https://YOUR_URL/proxy-domain.list' # change it
     interval: 1800
-    path: ./ruleset/proxy-domain.yaml
+    path: ./ruleset/proxy-domain.txt
   proxy-ip:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/proxy-ip.yaml" # change it
+    format: text
+    url: 'https://YOUR_URL/proxy-ip.list' # change it
     interval: 1800
-    path: ./ruleset/proxy-ip.yaml
+    path: ./ruleset/proxy-ip.txt
   antifilter-ip:
     behavior: classical
     type: http
-    url: "https://YOUR_URL/antifilter-ip.yaml" # change it
+    format: text
+    url: 'https://YOUR_URL/antifilter-ip.list' # change it
     interval: 43200
-    path: ./ruleset/antifilter-ip.yaml
+    path: ./ruleset/antifilter-ip.txt
 
 rules:
   - RULE-SET,direct-domain,DIRECT
