@@ -4,7 +4,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ssclash
-PKG_VERSION:=1.4
+PKG_VERSION:=1.5
 PKG_RELEASE:=1
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
@@ -42,7 +42,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_BIN) ./rootfs/opt/clash/bin/clash-rules $(1)/opt/clash/bin/
 
 	$(INSTALL_DIR) $(1)/opt/clash
-	$(CP) ./rootfs/opt/clash/config.yaml $(1)/opt/clash/
+	$(CP) ./rootfs/opt/clash/config.yaml.default $(1)/opt/clash/
 	$(INSTALL_BIN) ./rootfs/opt/clash/nft.conf $(1)/opt/clash/
 
 	$(INSTALL_DIR) $(1)/opt/clash/ui
@@ -56,6 +56,12 @@ define Package/$(PKG_NAME)/install
 
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/ssclash
 	$(CP) ./rootfs/www/luci-static/resources/view/ssclash/* $(1)/www/luci-static/resources/view/ssclash/
+endef
+
+define Package/$(PKG_NAME)/postinst
+	if [ ! -f /opt/clash/config.yaml ]; then \
+		cp /opt/clash/config.yaml.default /opt/clash/config.yaml; \
+	fi
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
