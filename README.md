@@ -27,8 +27,8 @@ For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
 Download the ssclash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.5/luci-app-ssclash_1.5-1_all.ipk -o /tmp/luci-app-ssclash_1.5-1_all.ipk
-opkg install /tmp/luci-app-ssclash_1.5-1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.6/luci-app-ssclash_1.6-1_all.ipk -o /tmp/luci-app-ssclash_1.6-1_all.ipk
+opkg install /tmp/luci-app-ssclash_1.6-1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -95,10 +95,8 @@ http://ROUTER_IP:9090/ui/
 To remove Clash, delete the related files, `luci-app-ssclash` package and kernel module `kmod-nft-tproxy` or `iptables-mod-tproxy`.
 
 ```bash
-/etc/init.d/clash stop
-/etc/init.d/clash disable
-rm -f /opt/clash/bin/clash
 opkg remove luci-app-ssclash kmod-nft-tproxy
+rm -rf /opt/clash
 ```
 
 ---
