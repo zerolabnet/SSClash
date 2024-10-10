@@ -1,6 +1,6 @@
 {
 	"admin/services/ssclash": {
-		"title": "ssclash",
+		"title": "SSClash",
 		"action": {
 			"type": "alias",
 			"path": "admin/services/ssclash/config"

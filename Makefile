@@ -8,7 +8,7 @@ PKG_VERSION:=1.7
 PKG_RELEASE:=1
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
-LUCI_TITLE:=LuCI Support for ssclash
+LUCI_TITLE:=LuCI Support for SSClash
 LUCI_DEPENDS:=+luci-base
 LUCI_PKGARCH:=all
 
@@ -24,7 +24,7 @@ define Package/$(PKG_NAME)
 endef
 
 define Package/$(PKG_NAME)/description
-  LuCI interface for ssclash, a tool for managing and configuring Clash.
+  LuCI interface for SSClash, a tool for managing and configuring Clash.
 endef
 
 define Build/Prepare
