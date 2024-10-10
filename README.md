@@ -3,7 +3,7 @@
   <br>Meta Kernel<br>
 </h1>
 
-<h3 align="center">Here's the step-by-step process for installing and configuring ssclash on your OpenWrt router</h3>
+<h3 align="center">Here's the step-by-step process for installing and configuring SSClash on your OpenWrt router</h3>
 
 # Setup Guide
 
@@ -24,7 +24,7 @@ opkg install kmod-nft-tproxy
 For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
 
 ## Step 3: Download and Install `luci-app-ssclash` Package
-Download the ssclash package and install it.
+Download the SSClash package and install it.
 
 ```bash
 curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.7/luci-app-ssclash_1.7-1_all.ipk -o /tmp/luci-app-ssclash_1.7-1_all.ipk
