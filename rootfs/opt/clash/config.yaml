@@ -59,24 +59,39 @@ proxies:
       short-id: ae380de2eeded283 # change it
     client-fingerprint: chrome
 
+  - name: 'YY-reality' # change it
+    type: vless
+    server: yy-reality-server-IP # change it
+    port: 443
+    uuid: 3f0d4ce6-e4fe-46f9-804c-cce633e22785 # change it
+    network: tcp
+    tls: true
+    udp: true
+    flow: xtls-rprx-vision
+    servername: masking-domain.example.org # change it
+    reality-opts:
+      public-key: beAHvGPT-mhlYQAvX7u_rQQfnJqTXaStmRFkTnkUolE # change it
+      short-id: 0890fec52c6dd1ca # change it
+    client-fingerprint: chrome
+
 proxy-groups:
   # Select (used for selecting proxy or proxy group)
   - name: PROXY
     type: select
     # disable-udp: true
-    proxies: [XX-reality] # change it, add the others
+    proxies: [XX-reality, YY-reality] # change it, add the others
 
   # Fallback
   - name: FALLBACK
     type: fallback
-    proxies: [XX-reality] # change it, add the others
+    proxies: [XX-reality, YY-reality] # change it, add the others
     url: 'https://www.gstatic.com/generate_204' # or https://cp.cloudflare.com/generate_204
     interval: 300
 
   # # Load-balance
   # - name: LB-PROXY
   #   type: load-balance
-  #   proxies: [XX-reality] # change it, add the others
+  #   proxies: [XX-reality, YY-reality] # change it, add the others
   #   url: 'https://www.gstatic.com/generate_204'
   #   interval: 300
   #   strategy: consistent-hashing # or round-robin

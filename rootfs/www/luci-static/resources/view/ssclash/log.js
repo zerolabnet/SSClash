@@ -5,6 +5,7 @@
 
 let editor = null;
 let lastLogLength = 0;
+let loggerPath = null;
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -28,6 +29,39 @@ async function initializeAceEditor() {
         readOnly: true,
         wrap: true
     });
+
+    startPolling();
+}
+
+function startPolling() {
+    poll.add(() => {
+        if (loggerPath) {
+            return fs.exec_direct(loggerPath, ['-e', 'clash'])
+                .then(res => {
+                    if (res) {
+                        const lines = res.trim().split('\n');
+                        if (lines.length > lastLogLength) {
+                            const newLines = lines.slice(lastLogLength);
+                            const processedNewLines = newLines.map(processLogLine).join('\n');
+
+                            editor.session.insert({
+                                row: editor.session.getLength(),
+                                column: 0
+                            }, (lastLogLength > 0 ? '\n' : '') + processedNewLines);
+
+                            lastLogLength = lines.length;
+                            editor.scrollToLine(editor.session.getLength(), false, true, function() {});
+                        }
+                    } else if (lastLogLength > 0) {
+                        editor.setValue('', 1);
+                        lastLogLength = 0;
+                    }
+                })
+                .catch(err => {
+                    console.error('Error executing logread:', err);
+                });
+        }
+    });
 }
 
 function processLogLine(line) {
@@ -40,41 +74,12 @@ function processLogLine(line) {
 
 return view.extend({
     load: function () {
-        return fs.stat('/sbin/logread');
+        return fs.stat('/sbin/logread').then(stat => {
+            loggerPath = stat && stat.path ? stat.path : null;
+        });
     },
 
     render: function (stat) {
-        const loggerPath = stat && stat.path ? stat.path : null;
-
-        poll.add(() => {
-            if (loggerPath && editor) {
-                return fs.exec_direct(loggerPath, ['-e', 'clash'])
-                    .then(res => {
-                        if (res) {
-                            const lines = res.trim().split('\n');
-                            if (lines.length > lastLogLength) {
-                                const newLines = lines.slice(lastLogLength);
-                                const processedNewLines = newLines.map(processLogLine).join('\n');
-
-                                editor.session.insert({
-                                    row: editor.session.getLength(),
-                                    column: 0
-                                }, (lastLogLength > 0 ? '\n' : '') + processedNewLines);
-
-                                lastLogLength = lines.length;
-                                editor.scrollToLine(editor.session.getLength(), false, true, function() {});
-                            }
-                        } else if (lastLogLength > 0) {
-                            editor.setValue('', 1);
-                            lastLogLength = 0;
-                        }
-                    })
-                    .catch(err => {
-                        console.error('Error executing logread:', err);
-                    });
-            }
-        });
-
         const view = E(
             'div',
             { class: 'cbi-map' },
