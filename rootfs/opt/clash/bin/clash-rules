@@ -19,7 +19,7 @@ start() {
         done
 
         # Exclude interfaces in CLASH
-        for intf in wg+ ppp+ veth+ docker+; do
+        for intf in wan+ ppp+ tun+ tap+ wg+ lxc+ veth+ vnet+ docker+ dummy+; do
             iptables -t mangle -A CLASH -i $intf -j RETURN
             iptables -t mangle -A CLASH -o $intf -j RETURN
         done
@@ -36,7 +36,7 @@ start() {
         done
 
         # Exclude interfaces in CLASH_LOCAL
-        for intf in wg+ ppp+ veth+ docker+; do
+        for intf in wan+ ppp+ tun+ tap+ wg+ lxc+ veth+ vnet+ docker+ dummy+; do
             iptables -t mangle -A CLASH_LOCAL -i $intf -j RETURN
             iptables -t mangle -A CLASH_LOCAL -o $intf -j RETURN
         done
