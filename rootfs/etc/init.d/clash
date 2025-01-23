@@ -22,6 +22,12 @@ start_service() {
 		ln -s /tmp/clash/ruleset /opt/clash/ruleset
 		msg "Created a symlink from '/tmp/clash/ruleset' to '/opt/clash/ruleset'"
 	fi
+	
+ 	/opt/clash/bin/clash -d /opt/clash -t
+	if [ $? -ne 0 ]; then
+		msg "Clash instance is not started"
+		return
+	fi
 
 	procd_open_instance
 	procd_set_param command /opt/clash/bin/clash -d /opt/clash
