@@ -18,7 +18,7 @@ opkg update
 Install the necessary kernel module for nftables.
 
 ```bash
-opkg install kmod-nft-tproxy
+opkg install kmod-nft-tproxy curl
 ```
 
 For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
@@ -48,19 +48,19 @@ cd /opt/clash/bin
 For **amd64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.18.9/mihomo-linux-amd64-compatible-v1.18.9.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.18.9/mihomo-linux-amd64-compatible-v1.18.10.gz -o clash.gz
 ```
 
 For **arm64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.18.9/mihomo-linux-arm64-v1.18.9.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.18.9/mihomo-linux-arm64-v1.18.10.gz -o clash.gz
 ```
 
 For **mipsel_24kc** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.18.9/mihomo-linux-mipsle-softfloat-v1.18.9.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.18.9/mihomo-linux-mipsle-softfloat-v1.18.10.gz -o clash.gz
 ```
 
 Need a different architecture? Visit the [MetaCubeX Release Page](https://github.com/MetaCubeX/mihomo/releases) and choose the one that matches your device.
