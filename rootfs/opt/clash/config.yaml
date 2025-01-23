@@ -6,7 +6,8 @@ tproxy-port: 7894
 unified-delay: true
 tcp-concurrent: true
 external-controller: 0.0.0.0:9090
-external-ui: ./ui
+external-ui: ./zash
+external-ui-url: "https://github.com/Zephyruso/zashboard/releases/latest/download/dist-cdn-fonts.zip"
 
 # DNS server settings
 # This section is optional. When not present, the DNS server will be disabled.
@@ -41,6 +42,10 @@ sniffer:
     #   ports: [443, 8443]
   skip-domain:
     - 'Mijia Cloud'
+    - +.lan
+    - +.local
+    - +.push.apple.com
+    - +.apple.com
 
 proxies:
   # vless
@@ -97,6 +102,7 @@ proxy-groups:
   #   strategy: consistent-hashing # or round-robin
 
 rule-providers:
+
   direct-domain:
     behavior: classical
     type: http
@@ -104,6 +110,7 @@ rule-providers:
     url: 'https://YOUR_URL/direct-domain.list' # change it
     interval: 1800
     path: ./ruleset/direct-domain.txt
+    
   direct-ip:
     behavior: classical
     type: http
@@ -111,6 +118,7 @@ rule-providers:
     url: 'https://YOUR_URL/direct-ip.list' # change it
     interval: 1800
     path: ./ruleset/direct-ip.txt
+    
   proxy-domain:
     behavior: classical
     type: http
@@ -118,6 +126,7 @@ rule-providers:
     url: 'https://YOUR_URL/proxy-domain.list' # change it
     interval: 1800
     path: ./ruleset/proxy-domain.txt
+    
   proxy-ip:
     behavior: classical
     type: http
@@ -125,6 +134,7 @@ rule-providers:
     url: 'https://YOUR_URL/proxy-ip.list' # change it
     interval: 1800
     path: ./ruleset/proxy-ip.txt
+    
   antifilter-ip:
     behavior: classical
     type: http
