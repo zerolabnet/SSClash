@@ -1,10 +1,10 @@
-# Copyright 2024 ZeroChaos (https://github.com/zerolabnet/ssclash)
+# Copyright 2024-2025 ZeroChaos (https://github.com/zerolabnet/ssclash)
 # This is free software, licensed under the GNU General Public License v2.
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ssclash
-PKG_VERSION:=1.8.1
+PKG_VERSION:=1.8.2
 PKG_RELEASE:=1
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
