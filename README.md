@@ -32,12 +32,6 @@ opkg install /tmp/luci-app-ssclash_1.8.2-1_all.ipk
 rm /tmp/*.ipk
 ```
 
-Stop the service until you edit the configuration.
-
-```bash
-/etc/init.d/clash stop
-```
-
 ## Step 4: Download Clash.Meta Kernel
 Navigate to the `bin` directory and download the Clash.Meta Kernel. Choose the appropriate architecture.
 
