@@ -27,9 +27,10 @@ For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
 Download the SSClash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v1.8.2/luci-app-ssclash_1.8.2-1_all.ipk -o /tmp/luci-app-ssclash_1.8.2-1_all.ipk
-opkg install /tmp/luci-app-ssclash_1.8.2-1_all.ipk
-rm /tmp/*.ipk
+releasessclash=$(curl -s -L https://github.com/zerolabnet/SSClash/releases/latest | grep "title>Release" | cut -d " " -f 4 | cut -d "v" -f 2) && \
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v$releasessclash/luci-app-ssclash_$releasessclash-1_all.ipk -o /tmp/luci-app-ssclash_$releasessclash-1_all.ipk && \
+opkg install /tmp/luci-app-ssclash_$releasessclash-1_all.ipk && \
+rm -rf /tmp/luci-app-ssclash_$releasessclash-1_all.ipk
 ```
 
 ## Step 4: Download Clash.Meta Kernel
