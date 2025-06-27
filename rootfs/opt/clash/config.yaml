@@ -15,9 +15,12 @@ dns:
   listen: 0.0.0.0:7874
   ipv6: false
   # Bootstrap DNS
-  default-nameserver: ['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4']
+  default-nameserver: ['1.1.1.1#PROXY', '1.0.0.1#PROXY', '8.8.8.8#PROXY', '8.8.4.4#PROXY']
+  # Rules for specific domains
+  nameserver-policy:
+    '+.polaris-iot.com': [77.88.8.8, 77.88.8.1]
   # Upstream DNS
-  nameserver: ['https://dns10.quad9.net/dns-query', 'https://dns.aa.net.uk/dns-query']
+  nameserver: ['https://dns10.quad9.net/dns-query#PROXY', 'https://dns.aa.net.uk/dns-query#PROXY']
 
 # find-process-mode: off
 # global-client-fingerprint: chrome
@@ -41,6 +44,15 @@ sniffer:
     #   ports: [443, 8443]
   skip-domain:
     - 'Mijia Cloud'
+    - '+.lan'
+    - '+.local'
+    - '+.push.apple.com'
+    - '+.apple.com'
+  # To avoid sniffing a specific device on your network
+  # skip-src-address:
+  #   - 192.168.1.100/32
+  # skip-dst-address:
+  #   - 192.168.1.100/32
 
 proxies:
   # vless
@@ -104,6 +116,7 @@ rule-providers:
     url: 'https://YOUR_URL/direct-domain.list' # change it
     interval: 1800
     path: ./ruleset/direct-domain.txt
+    proxy: PROXY
   direct-ip:
     behavior: classical
     type: http
@@ -111,6 +124,7 @@ rule-providers:
     url: 'https://YOUR_URL/direct-ip.list' # change it
     interval: 1800
     path: ./ruleset/direct-ip.txt
+    proxy: PROXY
   proxy-domain:
     behavior: classical
     type: http
@@ -118,6 +132,7 @@ rule-providers:
     url: 'https://YOUR_URL/proxy-domain.list' # change it
     interval: 1800
     path: ./ruleset/proxy-domain.txt
+    proxy: PROXY
   proxy-ip:
     behavior: classical
     type: http
@@ -125,6 +140,7 @@ rule-providers:
     url: 'https://YOUR_URL/proxy-ip.list' # change it
     interval: 1800
     path: ./ruleset/proxy-ip.txt
+    proxy: PROXY
   antifilter-ip:
     behavior: classical
     type: http
@@ -132,8 +148,13 @@ rule-providers:
     url: 'https://YOUR_URL/antifilter-ip.list' # change it
     interval: 43200
     path: ./ruleset/antifilter-ip.txt
+    proxy: PROXY
 
 rules:
+  # - SRC-IP-CIDR,192.168.1.101/32,DIRECT # To exclude a specific device on your network
+  # - IP-CIDR,192.168.1.101/32,DIRECT # To exclude a specific device on your network
+  # - SRC-PORT,123,DIRECT # To exclude a specific port on your network
+  # - DST-PORT,123,DIRECT # To exclude a specific port on your network
   - RULE-SET,direct-domain,DIRECT
   - RULE-SET,direct-ip,DIRECT
   - RULE-SET,proxy-domain,PROXY

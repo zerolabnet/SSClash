@@ -58,18 +58,32 @@ async function toggleService() {
 }
 
 async function openDashboard() {
-	let newWindow = window.open('', '_blank');
-	const running = await getServiceStatus();
-	if (running) {
-		let port = '9090';
-		let path = 'ui';
-		let protocol = window.location.protocol;
-		let hostname = window.location.hostname;
-		let url = `${protocol}//${hostname}:${port}/${path}/?hostname=${hostname}&port=${port}`;
-		newWindow.location.href = url;
-	} else {
+	const newWindow = window.open('about:blank', '_blank'); // safer fallback URL
+
+	if (!newWindow) {
+		alert(_('Popup was blocked. Please allow popups for this site.'));
+		return;
+	}
+
+	try {
+		const running = await getServiceStatus();
+
+		if (running) {
+			const port = 9090;
+			const path = 'ui';
+			const protocol = window.location.protocol;
+			const hostname = window.location.hostname;
+
+			const url = `${protocol}//${hostname}:${port}/${path}/?hostname=${hostname}&port=${port}`;
+			newWindow.location.href = url;
+		} else {
+			newWindow.close();
+			alert(_('Service is not running.'));
+		}
+	} catch (error) {
 		newWindow.close();
-		alert(_('Service is not running.'));
+		console.error('Error checking service status:', error);
+		alert(_('Failed to check service status.'));
 	}
 }
 
