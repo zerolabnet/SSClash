@@ -1,52 +1,187 @@
 #!/bin/sh
 
+CONFIG_FILE="/opt/clash/config.yaml"
+
+# Extract server IPs from config.yaml
+extract_server_ips() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Config file not found: $CONFIG_FILE" >&2
+        return 1
+    fi
+
+    # Extract IPs using awk
+    awk '
+    /^proxies:/ { in_proxies = 1; next }
+    /^[a-zA-Z]/ && !/^  / { in_proxies = 0 }
+    in_proxies && /server:/ {
+        gsub(/^[[:space:]]*server:[[:space:]]*/, "")
+        gsub(/[[:space:]]*$/, "")
+        print $0
+    }
+    ' "$CONFIG_FILE"
+}
+
+# Apply nftables rules dynamically
+apply_nft_rules() {
+    local server_ips="$1"
+
+    # Delete existing table
+    nft delete table ip clash 2>/dev/null
+
+    # Create table and chains
+    nft add table ip clash
+    nft add chain ip clash prerouting '{ type filter hook prerouting priority mangle; policy accept; }'
+    nft add chain ip clash output '{ type route hook output priority mangle; policy accept; }'
+
+    # Block QUIC first (for YouTube)
+    nft add rule ip clash prerouting udp dport 443 reject
+
+    # Exclude clash process itself (by user ID if available)
+    nft add rule ip clash output meta skuid 0 return
+
+    # Prevent already marked packets from re-entering
+    nft add rule ip clash prerouting meta mark 2 return
+    nft add rule ip clash output meta mark 2 return
+
+    # Exclude localhost traffic
+    nft add rule ip clash prerouting ip saddr 127.0.0.0/8 return
+    nft add rule ip clash prerouting ip daddr 127.0.0.0/8 return
+    nft add rule ip clash output ip saddr 127.0.0.0/8 return
+    nft add rule ip clash output ip daddr 127.0.0.0/8 return
+
+    # Exclude reserved networks
+    for addr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
+        nft add rule ip clash prerouting ip daddr "$addr" return
+        nft add rule ip clash output ip daddr "$addr" return
+    done
+
+    # Exclude server IPs (both source and destination)
+    if [ -n "$server_ips" ]; then
+        echo "$server_ips" | while IFS= read -r ip; do
+            [ -n "$ip" ] && {
+                nft add rule ip clash prerouting ip saddr "$ip/32" return
+                nft add rule ip clash prerouting ip daddr "$ip/32" return
+                nft add rule ip clash output ip saddr "$ip/32" return
+                nft add rule ip clash output ip daddr "$ip/32" return
+            }
+        done
+    fi
+
+    # Exclude interfaces
+    for intf in wan ppp tun tap wg lxc veth vnet docker dummy; do
+        nft add rule ip clash prerouting iifname "${intf}*" return
+        nft add rule ip clash prerouting oifname "${intf}*" return
+        nft add rule ip clash output iifname "${intf}*" return
+        nft add rule ip clash output oifname "${intf}*" return
+    done
+
+    # Exclude specific ports used by clash
+    nft add rule ip clash prerouting tcp dport {7890, 7891, 7892, 7893, 7894} return
+    nft add rule ip clash prerouting udp dport {7890, 7891, 7892, 7893, 7894} return
+    nft add rule ip clash output tcp sport {7890, 7891, 7892, 7893, 7894} return
+    nft add rule ip clash output udp sport {7890, 7891, 7892, 7893, 7894} return
+
+    # TPROXY rules with mark to prevent loops
+    nft add rule ip clash prerouting ip protocol tcp tproxy to 127.0.0.1:7894 meta mark set 1
+    nft add rule ip clash prerouting ip protocol udp tproxy to 127.0.0.1:7894 meta mark set 1
+
+    # Mark packets for routing (only if not already marked)
+    nft add rule ip clash output meta mark 0 ip protocol tcp meta mark set 1
+    nft add rule ip clash output meta mark 0 ip protocol udp meta mark set 1
+}
+
 start() {
+    local server_ips
+    server_ips=$(extract_server_ips)
+
+    if [ $? -eq 0 ] && [ -n "$server_ips" ]; then
+        echo "Extracted server IPs: $(echo "$server_ips" | tr '\n' ' ')"
+    else
+        echo "Warning: No server IPs extracted from config"
+    fi
+
     if hash nft 2>/dev/null; then
-        nft -f /opt/clash/nft.conf
+        # Apply nftables rules dynamically
+        apply_nft_rules "$server_ips"
         ip route add local default dev lo table 100
         ip rule add fwmark 1 table 100
     elif hash iptables 2>/dev/null; then
         # Block QUIC first (for YouTube)
-        iptables -t filter -I INPUT -p udp --dport 443 -j REJECT
-        iptables -t filter -I FORWARD -p udp --dport 443 -j REJECT
+        iptables -t filter -I INPUT -p udp --dport 443 -j REJECT 2>/dev/null
+        iptables -t filter -I FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
 
-        iptables -t mangle -N CLASH
-        iptables -t mangle -N CLASH_LOCAL
+        # Create chains
+        iptables -t mangle -N CLASH 2>/dev/null
+        iptables -t mangle -N CLASH_LOCAL 2>/dev/null
 
         # Exclude local networks in CLASH
         for addr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
-            iptables -t mangle -A CLASH -d $addr -j RETURN
+            iptables -t mangle -A CLASH -d "$addr" -j RETURN
+            iptables -t mangle -A CLASH -s "$addr" -j RETURN
         done
+
+        # Exclude server IPs in CLASH (both source and destination)
+        if [ -n "$server_ips" ]; then
+            echo "$server_ips" | while IFS= read -r ip; do
+                [ -n "$ip" ] && {
+                    iptables -t mangle -A CLASH -d "$ip/32" -j RETURN
+                    iptables -t mangle -A CLASH -s "$ip/32" -j RETURN
+                }
+            done
+        fi
+
+        # Exclude clash ports
+        iptables -t mangle -A CLASH -p tcp --dport 7890:7894 -j RETURN
+        iptables -t mangle -A CLASH -p udp --dport 7890:7894 -j RETURN
+        iptables -t mangle -A CLASH -p tcp --sport 7890:7894 -j RETURN
+        iptables -t mangle -A CLASH -p udp --sport 7890:7894 -j RETURN
 
         # Exclude interfaces in CLASH
         for intf in wan+ ppp+ tun+ tap+ wg+ lxc+ veth+ vnet+ docker+ dummy+; do
-            iptables -t mangle -A CLASH -i $intf -j RETURN
-            iptables -t mangle -A CLASH -o $intf -j RETURN
+            iptables -t mangle -A CLASH -i "$intf" -j RETURN
+            iptables -t mangle -A CLASH -o "$intf" -j RETURN
         done
 
         # TPROXY rules
         iptables -t mangle -A CLASH -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 1
         iptables -t mangle -A CLASH -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 1
-
         iptables -t mangle -A PREROUTING -j CLASH
 
         # Exclude local networks in CLASH_LOCAL
         for addr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
-            iptables -t mangle -A CLASH_LOCAL -d $addr -j RETURN
+            iptables -t mangle -A CLASH_LOCAL -d "$addr" -j RETURN
+            iptables -t mangle -A CLASH_LOCAL -s "$addr" -j RETURN
         done
+
+        # Exclude server IPs in CLASH_LOCAL (both source and destination)
+        if [ -n "$server_ips" ]; then
+            echo "$server_ips" | while IFS= read -r ip; do
+                [ -n "$ip" ] && {
+                    iptables -t mangle -A CLASH_LOCAL -d "$ip/32" -j RETURN
+                    iptables -t mangle -A CLASH_LOCAL -s "$ip/32" -j RETURN
+                }
+            done
+        fi
+
+        # Exclude clash ports
+        iptables -t mangle -A CLASH_LOCAL -p tcp --dport 7890:7894 -j RETURN
+        iptables -t mangle -A CLASH_LOCAL -p udp --dport 7890:7894 -j RETURN
+        iptables -t mangle -A CLASH_LOCAL -p tcp --sport 7890:7894 -j RETURN
+        iptables -t mangle -A CLASH_LOCAL -p udp --sport 7890:7894 -j RETURN
 
         # Exclude interfaces in CLASH_LOCAL
         for intf in wan+ ppp+ tun+ tap+ wg+ lxc+ veth+ vnet+ docker+ dummy+; do
-            iptables -t mangle -A CLASH_LOCAL -i $intf -j RETURN
-            iptables -t mangle -A CLASH_LOCAL -o $intf -j RETURN
+            iptables -t mangle -A CLASH_LOCAL -i "$intf" -j RETURN
+            iptables -t mangle -A CLASH_LOCAL -o "$intf" -j RETURN
         done
 
-        # Prevent cyclic redirection
+        # Prevent cyclic redirection - multiple marks
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 1 -j RETURN
         iptables -t mangle -A CLASH_LOCAL -m mark --mark 2 -j RETURN
 
-        # Mark packets for routing
-        iptables -t mangle -A CLASH_LOCAL -p tcp -j MARK --set-mark 1
-        iptables -t mangle -A CLASH_LOCAL -p udp -j MARK --set-mark 1
+        # Mark packets for routing (only unmarked packets)
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -j MARK --set-mark 1
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark 1
         iptables -t mangle -A OUTPUT -j CLASH_LOCAL
 
         ip route add local default dev lo table 100
@@ -58,22 +193,20 @@ start() {
 
 stop() {
     if hash nft 2>/dev/null; then
-        nft delete table ip clash
-        ip route del local default dev lo table 100
-        ip rule del table 100
+        nft delete table ip clash 2>/dev/null
+        ip route del local default dev lo table 100 2>/dev/null
+        ip rule del table 100 2>/dev/null
     elif hash iptables 2>/dev/null; then
-        iptables -t filter -D INPUT -p udp --dport 443 -j REJECT
-        iptables -t filter -D FORWARD -p udp --dport 443 -j REJECT
-        iptables -t mangle -D PREROUTING -j CLASH
-        iptables -t mangle -F CLASH
-        iptables -t mangle -X CLASH
-
-        iptables -t mangle -D OUTPUT -j CLASH_LOCAL
-        iptables -t mangle -F CLASH_LOCAL
-        iptables -t mangle -X CLASH_LOCAL
-
-        ip route del local default dev lo table 100
-        ip rule del table 100
+        iptables -t filter -D INPUT -p udp --dport 443 -j REJECT 2>/dev/null
+        iptables -t filter -D FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
+        iptables -t mangle -D PREROUTING -j CLASH 2>/dev/null
+        iptables -t mangle -F CLASH 2>/dev/null
+        iptables -t mangle -X CLASH 2>/dev/null
+        iptables -t mangle -D OUTPUT -j CLASH_LOCAL 2>/dev/null
+        iptables -t mangle -F CLASH_LOCAL 2>/dev/null
+        iptables -t mangle -X CLASH_LOCAL 2>/dev/null
+        ip route del local default dev lo table 100 2>/dev/null
+        ip rule del table 100 2>/dev/null
     else
         echo "Unknown firewall, ignoring."
     fi

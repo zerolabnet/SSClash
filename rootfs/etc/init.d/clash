@@ -2,80 +2,230 @@
 
 START=21
 STOP=89
-
 USE_PROCD=1
 
 FLAG_FILE="/tmp/dnsmasq_once"
+CLASH_DIR="/opt/clash"
+CLASH_BIN="${CLASH_DIR}/bin/clash"
+CLASH_RULES="${CLASH_DIR}/bin/clash-rules"
+RULESET_TMPFS="/tmp/clash/ruleset"
+RULESET_LINK="${CLASH_DIR}/ruleset"
 
 msg() {
 	logger -p daemon.info -st "clash[$$]" "$*"
 }
 
-start_service() {
-	# The ruleset folder is used from tmpfs
-	if [ ! -d /tmp/clash/ruleset ]; then
-		mkdir -p /tmp/clash/ruleset
-		msg "The folder '/tmp/clash/ruleset' was created"
-	fi
-	if [ ! -L /opt/clash/ruleset ] || [ "$(readlink /opt/clash/ruleset)" != "/tmp/clash/ruleset" ]; then
-		rm -rf /opt/clash/ruleset
-		ln -s /tmp/clash/ruleset /opt/clash/ruleset
-		msg "Created a symlink from '/tmp/clash/ruleset' to '/opt/clash/ruleset'"
-	fi
-	
- 	/opt/clash/bin/clash -d /opt/clash -t
-	if [ $? -ne 0 ]; then
-		msg "Clash instance is not started"
-		return
+# Function to check the existence of files/directories
+check_files() {
+	if [ ! -f "$CLASH_BIN" ]; then
+		msg "ERROR: Clash binary not found at $CLASH_BIN"
+		return 1
 	fi
 
+	if [ ! -f "$CLASH_RULES" ]; then
+		msg "WARNING: Clash rules script not found at $CLASH_RULES"
+	fi
+
+	return 0
+}
+
+# Function to set up the ruleset
+setup_ruleset() {
+	# Create the directory in tmpfs if it doesn't exist
+	if [ ! -d "$RULESET_TMPFS" ]; then
+		if ! mkdir -p "$RULESET_TMPFS"; then
+			msg "ERROR: Failed to create directory $RULESET_TMPFS"
+			return 1
+		fi
+		msg "Created directory '$RULESET_TMPFS'"
+	fi
+
+	# Check and create a symbolic link
+	if [ ! -L "$RULESET_LINK" ] || [ "$(readlink "$RULESET_LINK")" != "$RULESET_TMPFS" ]; then
+		rm -rf "$RULESET_LINK"
+		if ! ln -s "$RULESET_TMPFS" "$RULESET_LINK"; then
+			msg "ERROR: Failed to create symlink from '$RULESET_TMPFS' to '$RULESET_LINK'"
+			return 1
+		fi
+		msg "Created symlink from '$RULESET_TMPFS' to '$RULESET_LINK'"
+	fi
+
+	return 0
+}
+
+# Function to configure DNS
+setup_dns() {
+	local dns_server="127.0.0.1#7874"
+
+	# Check if the server is already added
+	local existing_server=$(uci get dhcp.@dnsmasq[0].server 2>/dev/null | grep "$dns_server")
+
+	if [ -z "$existing_server" ]; then
+		uci add_list dhcp.@dnsmasq[0].server="$dns_server" || {
+			msg "ERROR: Failed to add DNS server"
+			return 1
+		}
+	fi
+
+	uci set dhcp.@dnsmasq[0].cachesize='0' || {
+		msg "ERROR: Failed to set cachesize"
+		return 1
+	}
+
+	uci set dhcp.@dnsmasq[0].noresolv='1' || {
+		msg "ERROR: Failed to set noresolv"
+		return 1
+	}
+
+	if ! uci commit dhcp; then
+		msg "ERROR: Failed to commit DNS changes"
+		return 1
+	fi
+
+	msg "DNS settings configured"
+	return 0
+}
+
+# Function to restore DNS settings
+restore_dns() {
+	# Remove only our entries
+	local dns_server="127.0.0.1#7874"
+
+	# Get the list of servers and remove only ours
+	local servers=$(uci get dhcp.@dnsmasq[0].server 2>/dev/null)
+	if echo "$servers" | grep -q "$dns_server"; then
+		uci del_list dhcp.@dnsmasq[0].server="$dns_server" 2>/dev/null
+	fi
+
+	# Restore settings only if they were changed by us
+	uci delete dhcp.@dnsmasq[0].cachesize 2>/dev/null
+	uci delete dhcp.@dnsmasq[0].noresolv 2>/dev/null
+
+	if uci commit dhcp; then
+		msg "DNS settings restored"
+	else
+		msg "WARNING: Failed to restore DNS settings"
+	fi
+}
+
+# Function to apply firewall rules
+apply_firewall_rules() {
+	if [ -f "$CLASH_RULES" ]; then
+		if "$CLASH_RULES" start; then
+			msg "Firewall rules applied"
+			return 0
+		else
+			msg "ERROR: Failed to apply firewall rules"
+			return 1
+		fi
+	else
+		msg "WARNING: Clash rules script not found, skipping firewall configuration"
+		return 0
+	fi
+}
+
+# Function to remove firewall rules
+remove_firewall_rules() {
+	if [ -f "$CLASH_RULES" ]; then
+		if "$CLASH_RULES" stop; then
+			msg "Firewall rules removed"
+		else
+			msg "WARNING: Failed to remove firewall rules"
+		fi
+	fi
+}
+
+# Function to restart dnsmasq
+restart_dnsmasq() {
+	if /etc/init.d/dnsmasq restart >/dev/null 2>&1; then
+		msg "dnsmasq restarted successfully"
+		return 0
+	else
+		msg "ERROR: Failed to restart dnsmasq"
+		return 1
+	fi
+}
+
+start_service() {
+	msg "Starting Clash service..."
+
+	# Check the required files
+	check_files || return 1
+
+	# Set up the ruleset
+	setup_ruleset || return 1
+
+	# Check Clash configuration
+	if ! "$CLASH_BIN" -d "$CLASH_DIR" -t; then
+		msg "ERROR: Clash configuration test failed"
+		return 1
+	fi
+
+	# Set up DNS
+	setup_dns || return 1
+
+	# Apply firewall rules
+	apply_firewall_rules || {
+		msg "WARNING: Continuing without firewall rules"
+	}
+
+	# Restart dnsmasq
+	restart_dnsmasq || {
+		msg "WARNING: dnsmasq restart failed, continuing anyway"
+	}
+
+	# Start Clash via procd
 	procd_open_instance
-	procd_set_param command /opt/clash/bin/clash -d /opt/clash
+	procd_set_param command "$CLASH_BIN" -d "$CLASH_DIR"
 	procd_set_param stdout 1
 	procd_set_param stderr 1
-	procd_set_param respawn
+	procd_set_param respawn ${respawn_threshold:-3600} ${respawn_timeout:-5} ${respawn_retry:-5}
+	procd_set_param file "$CLASH_DIR/config.yaml"
 	procd_close_instance
-	msg "Clash instance is started"
 
-	uci add_list dhcp.@dnsmasq[0].server='127.0.0.1#7874'
-	uci set dhcp.@dnsmasq[0].cachesize='0'
-	uci set dhcp.@dnsmasq[0].noresolv='1'
-	uci commit dhcp
-	msg "DNS settings have been changed"
-
-	/opt/clash/bin/clash-rules start
-	msg "Firewall rules applied"
-
-	/etc/init.d/dnsmasq restart > /dev/null 2>&1
-	msg "dnsmasq restarted"
+	msg "Clash service started successfully"
 }
 
 stop_service() {
-	msg "Clash instance has been stopped"
-	uci del dhcp.@dnsmasq[0].server
-	uci del dhcp.@dnsmasq[0].cachesize
-	uci del dhcp.@dnsmasq[0].noresolv
-	uci commit dhcp
-	msg "DNS settings have been restored"
+	msg "Stopping Clash service..."
 
-	/opt/clash/bin/clash-rules stop
-	msg "Firewall rules have been restored"
+	# Remove firewall rules
+	remove_firewall_rules
 
+	# Restore DNS settings
+	restore_dns
+
+	# Restart dnsmasq only if flag is not set
 	if [ ! -f "$FLAG_FILE" ]; then
-		/etc/init.d/dnsmasq restart > /dev/null 2>&1
-		msg "dnsmasq restarted"
+		restart_dnsmasq || {
+			msg "WARNING: Failed to restart dnsmasq during stop"
+		}
 	fi
 
+	# Clear the flag
 	rm -f "$FLAG_FILE"
+
+	msg "Clash service stopped"
 }
 
 reload_service() {
+	msg "Reloading Clash service..."
+
+	# Set flag to avoid unnecessary dnsmasq restart
 	touch "$FLAG_FILE"
+
 	stop
 	start
+
+	msg "Clash service reloaded"
+}
+
+service_triggers() {
+	procd_add_reload_trigger "clash"
 }
 
 boot() {
+	# Wait for system initialization
 	sleep 10
 	start
 }
