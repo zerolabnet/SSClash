@@ -9,7 +9,7 @@ extract_server_ips() {
         return 1
     fi
 
-    # Extract IPs using awk
+    # Extract IPs & domains using awk
     awk '
     /^proxies:/ { in_proxies = 1; next }
     /^[a-zA-Z]/ && !/^  / { in_proxies = 0 }
@@ -58,12 +58,14 @@ apply_nft_rules() {
     # Exclude server IPs (both source and destination)
     if [ -n "$server_ips" ]; then
         echo "$server_ips" | while IFS= read -r ip; do
-            [ -n "$ip" ] && {
+            if echo "$ip" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
                 nft add rule ip clash prerouting ip saddr "$ip/32" return
                 nft add rule ip clash prerouting ip daddr "$ip/32" return
                 nft add rule ip clash output ip saddr "$ip/32" return
                 nft add rule ip clash output ip daddr "$ip/32" return
-            }
+            else
+                echo "Skipping non-IP address in nft: $ip" >&2
+            fi
         done
     fi
 
@@ -123,10 +125,12 @@ start() {
         # Exclude server IPs in CLASH (both source and destination)
         if [ -n "$server_ips" ]; then
             echo "$server_ips" | while IFS= read -r ip; do
-                [ -n "$ip" ] && {
+                if echo "$ip" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
                     iptables -t mangle -A CLASH -d "$ip/32" -j RETURN
                     iptables -t mangle -A CLASH -s "$ip/32" -j RETURN
-                }
+                else
+                    echo "Skipping non-IP address in iptables: $ip" >&2
+                fi
             done
         fi
 
@@ -156,10 +160,12 @@ start() {
         # Exclude server IPs in CLASH_LOCAL (both source and destination)
         if [ -n "$server_ips" ]; then
             echo "$server_ips" | while IFS= read -r ip; do
-                [ -n "$ip" ] && {
+                if echo "$ip" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
                     iptables -t mangle -A CLASH_LOCAL -d "$ip/32" -j RETURN
                     iptables -t mangle -A CLASH_LOCAL -s "$ip/32" -j RETURN
-                }
+                else
+                    echo "Skipping non-IP address in iptables CLASH_LOCAL: $ip" >&2
+                fi
             done
         fi
 
