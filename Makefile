@@ -9,7 +9,7 @@ PKG_RELEASE:=3
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
 LUCI_TITLE:=LuCI Support for SSClash
-LUCI_DEPENDS:=+luci-base
+LUCI_DEPENDS:=+luci-base +bind-dig
 LUCI_PKGARCH:=all
 
 include $(INCLUDE_DIR)/package.mk
