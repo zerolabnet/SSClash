@@ -2,6 +2,8 @@
 
 CONFIG_FILE="/opt/clash/config.yaml"
 
+readonly RESERVED_NETWORKS="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4"
+
 # Function to log messages
 msg() {
     logger -p daemon.info -st "clash-rules[$$]" "$*"
@@ -88,8 +90,8 @@ extract_server_ips() {
 }
 
 # Function to get list of non-local network interfaces (WAN, etc.)
-get_non_local_interfaces() {
-    # Get all active interfaces, excluding our local patterns
+get_non_local_network_interfaces() {
+    # Get all active interfaces, excluding our local network patterns
     ip link show up | awk -F': ' '
     !/^[0-9]+: (br-lan|lan|eth|wlan|phy)/ && /^[0-9]+: [a-zA-Z]/ { print $2 }
     ' | cut -d'@' -f1 | sort -u
@@ -97,13 +99,13 @@ get_non_local_interfaces() {
 
 # For nftables - apply rules for non-local network interfaces
 apply_nft_interface_rules() {
-    local non_local_interfaces
-    non_local_interfaces=$(get_non_local_interfaces)
+    local non_local_network_interfaces
+    non_local_network_interfaces=$(get_non_local_network_interfaces)
 
-    if [ -n "$non_local_interfaces" ]; then
-        msg "Found non-local network interfaces: $(echo "$non_local_interfaces" | tr '\n' ' ')"
+    if [ -n "$non_local_network_interfaces" ]; then
+        msg "Found non-local network interfaces: $(echo "$non_local_network_interfaces" | tr '\n' ' ')"
         # Add RETURN rules for non-local network interfaces
-        echo "$non_local_interfaces" | while IFS= read -r iface; do
+        echo "$non_local_network_interfaces" | while IFS= read -r iface; do
             [ -n "$iface" ] && nft add rule ip clash prerouting iifname "$iface" return
         done
     else
@@ -113,18 +115,40 @@ apply_nft_interface_rules() {
 
 # For iptables - apply rules for non-local network interfaces
 apply_iptables_interface_rules() {
-    local non_local_interfaces
-    non_local_interfaces=$(get_non_local_interfaces)
+    local non_local_network_interfaces
+    non_local_network_interfaces=$(get_non_local_network_interfaces)
 
-    if [ -n "$non_local_interfaces" ]; then
-        msg "Found non-local network interfaces: $(echo "$non_local_interfaces" | tr '\n' ' ')"
+    if [ -n "$non_local_network_interfaces" ]; then
+        msg "Found non-local network interfaces: $(echo "$non_local_network_interfaces" | tr '\n' ' ')"
         # Add RETURN rules for non-local network interfaces
-        echo "$non_local_interfaces" | while IFS= read -r iface; do
+        echo "$non_local_network_interfaces" | while IFS= read -r iface; do
             [ -n "$iface" ] && iptables -t mangle -A CLASH -i "$iface" -j RETURN
         done
     else
         msg "No non-local network interfaces found"
     fi
+}
+
+# For nftables - apply rules for reserved networks
+apply_nft_reserved_networks() {
+    for network in $RESERVED_NETWORKS; do
+        nft add rule ip clash prerouting ip daddr "$network" return
+        nft add rule ip clash output ip daddr "$network" return
+    done
+
+    msg "Reserved networks excluded from proxy"
+}
+
+# For iptables - apply rules for reserved networks
+apply_iptables_reserved_networks() {
+    for network in $RESERVED_NETWORKS; do
+        iptables -t mangle -A CLASH -d "$network" -j RETURN
+        iptables -t mangle -A CLASH -s "$network" -j RETURN
+        iptables -t mangle -A CLASH_LOCAL -d "$network" -j RETURN
+        iptables -t mangle -A CLASH_LOCAL -s "$network" -j RETURN
+    done
+
+    msg "Reserved networks excluded from proxy (both source and destination)"
 }
 
 # Apply nftables rules dynamically
@@ -139,7 +163,7 @@ apply_nft_rules() {
     nft add chain ip clash prerouting '{ type filter hook prerouting priority dstnat + 1; policy accept; }'
     nft add chain ip clash output '{ type route hook output priority mangle; policy accept; }'
 
-    # Process only traffic from local interfaces (dynamic detection)
+    # Process only traffic from local network interfaces (dynamic detection)
     apply_nft_interface_rules
 
     # Exclude packets already marked by Clash
@@ -149,6 +173,9 @@ apply_nft_rules() {
     # Prevent already marked packets from re-entering
     nft add rule ip clash prerouting meta mark and 0xff00 != 0 return
     nft add rule ip clash output meta mark and 0xff00 != 0 return
+
+    # Exclude reserved networks (private, multicast, etc.)
+    apply_nft_reserved_networks
 
     # Block QUIC first (for YouTube)
     nft add rule ip clash prerouting udp dport 443 reject
@@ -209,7 +236,7 @@ start() {
         iptables -t mangle -N CLASH 2>/dev/null
         iptables -t mangle -N CLASH_LOCAL 2>/dev/null
 
-        # Process only traffic from local interfaces (dynamic detection)
+        # Process only traffic from local network interfaces (dynamic detection)
         apply_iptables_interface_rules
 
         # Exclude packets already marked by Clash
@@ -217,6 +244,9 @@ start() {
 
         # Prevent already marked packets
         iptables -t mangle -A CLASH -m mark --mark 0xff00/0xff00 -j RETURN
+
+        # Exclude reserved networks (private, multicast, etc.)
+        apply_iptables_reserved_networks
 
         # Block QUIC first (for YouTube)
         iptables -t filter -I INPUT -p udp --dport 443 -j REJECT 2>/dev/null
