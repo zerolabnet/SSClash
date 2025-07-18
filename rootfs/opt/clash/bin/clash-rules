@@ -2,15 +2,60 @@
 
 CONFIG_FILE="/opt/clash/config.yaml"
 
+# Function to log messages
+msg() {
+    logger -p daemon.info -st "clash-rules[$$]" "$*"
+}
+
+# Function to check if a string is a valid IP address
+is_valid_ip() {
+    local ip="$1"
+    # Check if it's a valid IPv4 address
+    echo "$ip" | grep -qE '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+}
+
+# Function to resolve domain name to IP addresses
+resolve_domain() {
+    local domain="$1"
+    local resolved_ips=""
+
+    # Use nslookup to resolve the domain
+    if command -v nslookup >/dev/null 2>&1; then
+        resolved_ips=$(nslookup "$domain" 2>/dev/null | awk '/^Address: / { print $2 }' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+    fi
+
+    # If nslookup failed or not available, try using getent
+    if [ -z "$resolved_ips" ] && command -v getent >/dev/null 2>&1; then
+        resolved_ips=$(getent hosts "$domain" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+    fi
+
+    # If getent failed or not available, try using wget
+    if [ -z "$resolved_ips" ] && command -v wget >/dev/null 2>&1; then
+        resolved_ips=$(wget -T 5 -t 1 --spider "$domain" 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    fi
+
+    # If all failed, try using ping (fallback)
+    if [ -z "$resolved_ips" ] && command -v ping >/dev/null 2>&1; then
+        resolved_ips=$(ping -c 1 -W 2 "$domain" 2>/dev/null | head -1 | grep -oE '\([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\)' | tr -d '()')
+    fi
+
+    # Ensure each IP is on a separate line and remove duplicates
+    if [ -n "$resolved_ips" ]; then
+        echo "$resolved_ips" | tr ' ' '\n' | grep -v '^$' | sort -u
+    fi
+}
+
 # Extract server IPs from config.yaml
 extract_server_ips() {
     if [ ! -f "$CONFIG_FILE" ]; then
-        echo "Config file not found: $CONFIG_FILE" >&2
+        msg "ERROR: Config file not found: $CONFIG_FILE"
         return 1
     fi
 
-    # Extract IPs using awk
-    awk '
+    local all_ips=""
+
+    # Extract servers using awk
+    local servers=$(awk '
     /^proxies:/ { in_proxies = 1; next }
     /^[a-zA-Z]/ && !/^  / { in_proxies = 0 }
     in_proxies && /server:/ {
@@ -18,7 +63,67 @@ extract_server_ips() {
         gsub(/[[:space:]]*$/, "")
         print $0
     }
-    ' "$CONFIG_FILE"
+    ' "$CONFIG_FILE")
+
+    # Process each server entry
+    if [ -n "$servers" ]; then
+        echo "$servers" | while IFS= read -r server; do
+            [ -z "$server" ] && continue
+
+            if is_valid_ip "$server"; then
+                # It's already an IP address
+                echo "$server"
+            else
+                # It's a domain name, resolve it
+                resolved_ips=$(resolve_domain "$server")
+                if [ -n "$resolved_ips" ]; then
+                    echo "$resolved_ips"
+                else
+                    msg "WARNING: Could not resolve domain: $server"
+                fi
+            fi
+        done
+    fi
+}
+
+# Function to get list of non-local network interfaces (WAN, etc.)
+get_non_local_interfaces() {
+    # Get all active interfaces, excluding our local patterns
+    ip link show up | awk -F': ' '
+    !/^[0-9]+: (br-lan|lan|eth|wlan|phy)/ && /^[0-9]+: [a-zA-Z]/ { print $2 }
+    ' | cut -d'@' -f1 | sort -u
+}
+
+# For nftables - apply rules for non-local network interfaces
+apply_nft_interface_rules() {
+    local non_local_interfaces
+    non_local_interfaces=$(get_non_local_interfaces)
+
+    if [ -n "$non_local_interfaces" ]; then
+        msg "Found non-local network interfaces: $(echo "$non_local_interfaces" | tr '\n' ' ')"
+        # Add RETURN rules for non-local network interfaces
+        echo "$non_local_interfaces" | while IFS= read -r iface; do
+            [ -n "$iface" ] && nft add rule ip clash prerouting iifname "$iface" return
+        done
+    else
+        msg "No non-local network interfaces found"
+    fi
+}
+
+# For iptables - apply rules for non-local network interfaces
+apply_iptables_interface_rules() {
+    local non_local_interfaces
+    non_local_interfaces=$(get_non_local_interfaces)
+
+    if [ -n "$non_local_interfaces" ]; then
+        msg "Found non-local network interfaces: $(echo "$non_local_interfaces" | tr '\n' ' ')"
+        # Add RETURN rules for non-local network interfaces
+        echo "$non_local_interfaces" | while IFS= read -r iface; do
+            [ -n "$iface" ] && iptables -t mangle -A CLASH -i "$iface" -j RETURN
+        done
+    else
+        msg "No non-local network interfaces found"
+    fi
 }
 
 # Apply nftables rules dynamically
@@ -30,30 +135,25 @@ apply_nft_rules() {
 
     # Create table and chains
     nft add table ip clash
-    nft add chain ip clash prerouting '{ type filter hook prerouting priority mangle; policy accept; }'
+    nft add chain ip clash prerouting '{ type filter hook prerouting priority dstnat + 1; policy accept; }'
     nft add chain ip clash output '{ type route hook output priority mangle; policy accept; }'
+
+    # Process only traffic from local interfaces (dynamic detection)
+    apply_nft_interface_rules
+
+    # Exclude packets already marked by Clash
+    nft add rule ip clash prerouting meta mark 0x0002 return
+    nft add rule ip clash output meta mark 0x0002 return
+
+    # Prevent already marked packets from re-entering
+    nft add rule ip clash prerouting meta mark and 0xff00 != 0 return
+    nft add rule ip clash output meta mark and 0xff00 != 0 return
 
     # Block QUIC first (for YouTube)
     nft add rule ip clash prerouting udp dport 443 reject
 
-    # Exclude clash process itself (by user ID if available)
+    # Exclude Clash process itself (by user ID if available)
     nft add rule ip clash output meta skuid 0 return
-
-    # Prevent already marked packets from re-entering
-    nft add rule ip clash prerouting meta mark 2 return
-    nft add rule ip clash output meta mark 2 return
-
-    # Exclude localhost traffic
-    nft add rule ip clash prerouting ip saddr 127.0.0.0/8 return
-    nft add rule ip clash prerouting ip daddr 127.0.0.0/8 return
-    nft add rule ip clash output ip saddr 127.0.0.0/8 return
-    nft add rule ip clash output ip daddr 127.0.0.0/8 return
-
-    # Exclude reserved networks
-    for addr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
-        nft add rule ip clash prerouting ip daddr "$addr" return
-        nft add rule ip clash output ip daddr "$addr" return
-    done
 
     # Exclude server IPs (both source and destination)
     if [ -n "$server_ips" ]; then
@@ -67,58 +167,59 @@ apply_nft_rules() {
         done
     fi
 
-    # Exclude interfaces
-    for intf in wan ppp tun tap wg lxc veth vnet docker dummy; do
-        nft add rule ip clash prerouting iifname "${intf}*" return
-        nft add rule ip clash prerouting oifname "${intf}*" return
-        nft add rule ip clash output iifname "${intf}*" return
-        nft add rule ip clash output oifname "${intf}*" return
-    done
-
-    # Exclude specific ports used by clash
+    # Exclude specific ports used by Clash
     nft add rule ip clash prerouting tcp dport {7890, 7891, 7892, 7893, 7894} return
     nft add rule ip clash prerouting udp dport {7890, 7891, 7892, 7893, 7894} return
     nft add rule ip clash output tcp sport {7890, 7891, 7892, 7893, 7894} return
     nft add rule ip clash output udp sport {7890, 7891, 7892, 7893, 7894} return
 
     # TPROXY rules with mark to prevent loops
-    nft add rule ip clash prerouting ip protocol tcp tproxy to 127.0.0.1:7894 meta mark set 1
-    nft add rule ip clash prerouting ip protocol udp tproxy to 127.0.0.1:7894 meta mark set 1
+    nft add rule ip clash prerouting ip protocol tcp tproxy to 127.0.0.1:7894 meta mark set 0x0001
+    nft add rule ip clash prerouting ip protocol udp tproxy to 127.0.0.1:7894 meta mark set 0x0001
 
     # Mark packets for routing (only if not already marked)
-    nft add rule ip clash output meta mark 0 ip protocol tcp meta mark set 1
-    nft add rule ip clash output meta mark 0 ip protocol udp meta mark set 1
+    nft add rule ip clash output meta mark 0 ip protocol tcp meta mark set 0x0001
+    nft add rule ip clash output meta mark 0 ip protocol udp meta mark set 0x0001
+
+    msg "nftables rules applied successfully"
 }
 
 start() {
+    msg "Starting Clash rules script"
+
     local server_ips
     server_ips=$(extract_server_ips)
 
     if [ $? -eq 0 ] && [ -n "$server_ips" ]; then
-        echo "Extracted server IPs: $(echo "$server_ips" | tr '\n' ' ')"
+        msg "Extracted server IPs: $(echo "$server_ips" | tr '\n' ' ')"
     else
-        echo "Warning: No server IPs extracted from config"
+        msg "WARNING: No server IPs extracted from config"
     fi
 
     if hash nft 2>/dev/null; then
+        msg "Using nftables for traffic redirection"
         # Apply nftables rules dynamically
         apply_nft_rules "$server_ips"
         ip route add local default dev lo table 100
-        ip rule add fwmark 1 table 100
+        ip rule add fwmark 0x0001 table 100
     elif hash iptables 2>/dev/null; then
-        # Block QUIC first (for YouTube)
-        iptables -t filter -I INPUT -p udp --dport 443 -j REJECT 2>/dev/null
-        iptables -t filter -I FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
-
+        msg "Using iptables for traffic redirection"
         # Create chains
         iptables -t mangle -N CLASH 2>/dev/null
         iptables -t mangle -N CLASH_LOCAL 2>/dev/null
 
-        # Exclude local networks in CLASH
-        for addr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
-            iptables -t mangle -A CLASH -d "$addr" -j RETURN
-            iptables -t mangle -A CLASH -s "$addr" -j RETURN
-        done
+        # Process only traffic from local interfaces (dynamic detection)
+        apply_iptables_interface_rules
+
+        # Exclude packets already marked by Clash
+        iptables -t mangle -A CLASH -m mark --mark 0x0002 -j RETURN
+
+        # Prevent already marked packets
+        iptables -t mangle -A CLASH -m mark --mark 0xff00/0xff00 -j RETURN
+
+        # Block QUIC first (for YouTube)
+        iptables -t filter -I INPUT -p udp --dport 443 -j REJECT 2>/dev/null
+        iptables -t filter -I FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
 
         # Exclude server IPs in CLASH (both source and destination)
         if [ -n "$server_ips" ]; then
@@ -130,28 +231,16 @@ start() {
             done
         fi
 
-        # Exclude clash ports
+        # Exclude specific ports used by Clash
         iptables -t mangle -A CLASH -p tcp --dport 7890:7894 -j RETURN
         iptables -t mangle -A CLASH -p udp --dport 7890:7894 -j RETURN
         iptables -t mangle -A CLASH -p tcp --sport 7890:7894 -j RETURN
         iptables -t mangle -A CLASH -p udp --sport 7890:7894 -j RETURN
 
-        # Exclude interfaces in CLASH
-        for intf in wan+ ppp+ tun+ tap+ wg+ lxc+ veth+ vnet+ docker+ dummy+; do
-            iptables -t mangle -A CLASH -i "$intf" -j RETURN
-            iptables -t mangle -A CLASH -o "$intf" -j RETURN
-        done
-
-        # TPROXY rules
-        iptables -t mangle -A CLASH -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 1
-        iptables -t mangle -A CLASH -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 1
+        # TPROXY rules with mark to prevent loops
+        iptables -t mangle -A CLASH -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+        iptables -t mangle -A CLASH -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
         iptables -t mangle -A PREROUTING -j CLASH
-
-        # Exclude local networks in CLASH_LOCAL
-        for addr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
-            iptables -t mangle -A CLASH_LOCAL -d "$addr" -j RETURN
-            iptables -t mangle -A CLASH_LOCAL -s "$addr" -j RETURN
-        done
 
         # Exclude server IPs in CLASH_LOCAL (both source and destination)
         if [ -n "$server_ips" ]; then
@@ -163,39 +252,43 @@ start() {
             done
         fi
 
-        # Exclude clash ports
+        # Exclude specific ports used by Clash
         iptables -t mangle -A CLASH_LOCAL -p tcp --dport 7890:7894 -j RETURN
         iptables -t mangle -A CLASH_LOCAL -p udp --dport 7890:7894 -j RETURN
         iptables -t mangle -A CLASH_LOCAL -p tcp --sport 7890:7894 -j RETURN
         iptables -t mangle -A CLASH_LOCAL -p udp --sport 7890:7894 -j RETURN
 
-        # Exclude interfaces in CLASH_LOCAL
-        for intf in wan+ ppp+ tun+ tap+ wg+ lxc+ veth+ vnet+ docker+ dummy+; do
-            iptables -t mangle -A CLASH_LOCAL -i "$intf" -j RETURN
-            iptables -t mangle -A CLASH_LOCAL -o "$intf" -j RETURN
-        done
+        # Exclude packets already marked by Clash
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0x0002 -j RETURN
 
-        # Prevent cyclic redirection - multiple marks
-        iptables -t mangle -A CLASH_LOCAL -m mark --mark 1 -j RETURN
-        iptables -t mangle -A CLASH_LOCAL -m mark --mark 2 -j RETURN
+        # Prevent already marked packets
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0xff00/0xff00 -j RETURN
 
         # Mark packets for routing (only unmarked packets)
-        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -j MARK --set-mark 1
-        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark 1
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -j MARK --set-mark 0x0001
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark 0x0001
         iptables -t mangle -A OUTPUT -j CLASH_LOCAL
 
         ip route add local default dev lo table 100
-        ip rule add fwmark 1 table 100
+        ip rule add fwmark 0x0001 table 100
+
+        msg "iptables rules applied successfully"
     else
-        echo "Unknown firewall, ignoring."
+        msg "ERROR: Neither nftables nor iptables found"
+        return 1
     fi
+
+    msg "Clash rules script started successfully"
 }
 
 stop() {
+    msg "Stopping Clash rules script"
+
     if hash nft 2>/dev/null; then
         nft delete table ip clash 2>/dev/null
         ip route del local default dev lo table 100 2>/dev/null
-        ip rule del table 100 2>/dev/null
+        ip rule del fwmark 0x0001 table 100 2>/dev/null
+        msg "nftables rules removed successfully"
     elif hash iptables 2>/dev/null; then
         iptables -t filter -D INPUT -p udp --dport 443 -j REJECT 2>/dev/null
         iptables -t filter -D FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
@@ -206,10 +299,14 @@ stop() {
         iptables -t mangle -F CLASH_LOCAL 2>/dev/null
         iptables -t mangle -X CLASH_LOCAL 2>/dev/null
         ip route del local default dev lo table 100 2>/dev/null
-        ip rule del table 100 2>/dev/null
+        ip rule del fwmark 0x0001 table 100 2>/dev/null
+        msg "iptables rules removed successfully"
     else
-        echo "Unknown firewall, ignoring."
+        msg "ERROR: Neither nftables nor iptables found"
+        return 1
     fi
+
+    msg "Clash rules script stopped successfully"
 }
 
 case "$1" in
