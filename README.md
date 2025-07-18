@@ -1,8 +1,3 @@
-<h1 align="center">
-  <img src="Meta.png" alt="Meta Kernel" width="200">
-  <br>Meta Kernel<br>
-</h1>
-
 <h3 align="center">Here's the step-by-step process for installing and configuring SSClash on your OpenWrt router</h3>
 
 # Setup Guide
