@@ -61,6 +61,7 @@ extract_server_ips() {
     in_proxies && /server:/ {
         gsub(/^[[:space:]]*server:[[:space:]]*/, "")
         gsub(/[[:space:]]*$/, "")
+        sub(/#.*/, "")
         print $0
     }
     ' "$CONFIG_FILE")
