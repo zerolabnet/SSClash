@@ -66,7 +66,13 @@ chmod +x clash
 I've written a simple interface for managing Clash from LuCI interface `luci-app-ssclash`. Edit Clash config and Apply.
 
 <p align="center">
- <img src="scr-00.png" width="100%">
+ <img src="scr-01.png" width="100%">
+</p>
+
+Select network interfaces to exclude from proxy. These interfaces will use direct routing (bypass proxy). WAN interface is automatically detected and excluded.
+
+<p align="center">
+ <img src="scr-02.png" width="100%">
 </p>
 
 ## Step 7: You can access to Dashboard from LuCI interface or manual
@@ -77,7 +83,7 @@ http://ROUTER_IP:9090/ui/
 ```
 
 <p align="center">
- <img src="scr-01.png" width="100%">
+ <img src="scr-03.png" width="100%">
 </p>
 
 # Remove Clash
