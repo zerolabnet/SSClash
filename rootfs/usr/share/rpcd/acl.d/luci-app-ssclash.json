@@ -4,6 +4,7 @@
 		"read": {
 			"file": {
 				"/opt/clash/config.yaml": [ "read" ],
+				"/opt/clash/excluded_interfaces": [ "read" ],
 				"/sbin/logread": [ "exec" ]
 			},
 			"ubus": {
@@ -14,6 +15,7 @@
 		"write": {
 			"file": {
 				"/opt/clash/config.yaml": [ "write" ],
+				"/opt/clash/excluded_interfaces": [ "write" ],
 				"/etc/init.d/clash start": [ "exec" ],
 				"/etc/init.d/clash stop": [ "exec" ],
 				"/etc/init.d/clash enable": [ "exec" ],

@@ -10,16 +10,24 @@
 		}
 	},
 	"admin/services/ssclash/config": {
-		"title": "Config",
+		"title": "Configuration",
 		"order": 10,
 		"action": {
 			"type": "view",
 			"path": "ssclash/config"
 		}
 	},
+	"admin/services/ssclash/interfaces": {
+		"title": "Interface Exclusions",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "ssclash/interfaces"
+		}
+	},
 	"admin/services/ssclash/log": {
 		"title": "Log",
-		"order": 20,
+		"order": 30,
 		"action": {
 			"type": "view",
 			"path": "ssclash/log"
