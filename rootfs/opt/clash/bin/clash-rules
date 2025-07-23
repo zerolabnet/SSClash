@@ -2,12 +2,132 @@
 
 CONFIG_FILE="/opt/clash/config.yaml"
 EXCLUDED_INTERFACES_FILE="/opt/clash/excluded_interfaces"
+INCLUDED_INTERFACES_FILE="/opt/clash/included_interfaces"
+SETTINGS_FILE="/opt/clash/settings"
 
 readonly RESERVED_NETWORKS="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.2.0/24 192.88.99.0/24 192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4 255.255.255.255/32"
 
 # Function to log messages
 msg() {
     logger -p daemon.info -st "clash-rules[$$]" "$*"
+}
+
+# Function to extract fake-ip range from config.yaml
+extract_fake_ip_range() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        return 1
+    fi
+
+    # Use awk to parse DNS section
+    local dns_settings=$(awk '
+    /^dns:/ { in_dns = 1; next }
+    /^[a-zA-Z]/ && !/^  / { in_dns = 0 }
+    in_dns && /enable:/ {
+        gsub(/^[[:space:]]*enable:[[:space:]]*/, "")
+        gsub(/[[:space:]]*$/, "")
+        sub(/#.*/, "")
+        if ($0 == "true") enable = "true"
+    }
+    in_dns && /enhanced-mode:/ {
+        gsub(/^[[:space:]]*enhanced-mode:[[:space:]]*/, "")
+        gsub(/[[:space:]]*$/, "")
+        sub(/#.*/, "")
+        if ($0 == "fake-ip") mode = "fake-ip"
+    }
+    in_dns && /fake-ip-range:/ {
+        gsub(/^[[:space:]]*fake-ip-range:[[:space:]]*/, "")
+        gsub(/[[:space:]]*$/, "")
+        sub(/#.*/, "")
+        range = $0
+    }
+    END {
+        if (enable == "true" && mode == "fake-ip" && range != "") {
+            print range
+        }
+    }
+    ' "$CONFIG_FILE")
+
+    if [ -n "$dns_settings" ]; then
+        echo "$dns_settings"
+        return 0
+    fi
+
+    return 1
+}
+
+# Function to load settings
+load_settings() {
+    local mode="exclude"
+    local auto_detect_lan="true"
+    local auto_detect_wan="true"
+    local block_quic="true"
+
+    if [ -f "$SETTINGS_FILE" ]; then
+        while IFS='=' read -r key value; do
+            case "$key" in
+                "INTERFACE_MODE") mode="$value" ;;
+                "AUTO_DETECT_LAN") auto_detect_lan="$value" ;;
+                "AUTO_DETECT_WAN") auto_detect_wan="$value" ;;
+                "BLOCK_QUIC") block_quic="$value" ;;
+            esac
+        done < "$SETTINGS_FILE"
+    fi
+
+    echo "${mode}:${auto_detect_lan}:${auto_detect_wan}:${block_quic}"
+}
+
+# Function to auto-detect LAN bridge interface
+auto_detect_lan_bridge() {
+    local bridge=""
+
+    for br in $(ls /sys/class/net/ 2>/dev/null | grep -E '^br-|^bridge'); do
+        if [ -d "/sys/class/net/$br/brif" ] && [ -n "$(ls /sys/class/net/$br/brif/ 2>/dev/null)" ]; then
+            local ip=$(ip addr show "$br" 2>/dev/null | awk '/inet / {print $2}' | head -1)
+            if [ -n "$ip" ]; then
+                case "$ip" in
+                    192.168.*|10.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*)
+                        bridge="$br"
+                        break
+                        ;;
+                esac
+            fi
+        fi
+    done
+
+    if [ -z "$bridge" ] && [ -d "/sys/class/net/br-lan" ]; then
+        bridge="br-lan"
+    fi
+
+    echo "$bridge"
+}
+
+# Function to get interfaces for processing (explicit mode)
+get_included_interfaces() {
+    local settings auto_detect_lan included_interfaces lan_bridge
+
+    settings=$(load_settings)
+    auto_detect_lan=$(echo "$settings" | cut -d: -f2)
+
+    if [ "$auto_detect_lan" = "true" ]; then
+        lan_bridge=$(auto_detect_lan_bridge)
+        if [ -n "$lan_bridge" ]; then
+            msg "Auto-detected LAN bridge: $lan_bridge"
+            echo "$lan_bridge"
+            return
+        fi
+    fi
+
+    if [ -f "$INCLUDED_INTERFACES_FILE" ]; then
+        included_interfaces=$(cat "$INCLUDED_INTERFACES_FILE" | grep -v '^$' | sort -u)
+        if [ -n "$included_interfaces" ]; then
+            msg "User-selected included interfaces: $(echo "$included_interfaces" | tr '\n' ' ')"
+            echo "$included_interfaces"
+            return
+        fi
+    fi
+
+    msg "No interfaces configured for explicit mode"
+    return
 }
 
 # Function to check if a string is a valid IP address
@@ -55,8 +175,6 @@ extract_server_ips() {
         return 1
     fi
 
-    local all_ips=""
-
     # Extract servers using awk
     local servers=$(awk '
     /^proxies:/ { in_proxies = 1; next }
@@ -92,15 +210,37 @@ extract_server_ips() {
 
 # Function to get WAN interface through which default route passes
 get_wan_interface() {
-    # Get the interface through which default route passes
-    ip route show default 2>/dev/null | awk '/default via/ {print $5}' | head -1
+    local wan_interface=""
+
+    wan_interface=$(ip route show default 2>/dev/null | awk '/default via/ {print $5}' | head -1)
+
+    if [ -z "$wan_interface" ]; then
+        wan_interface=$(awk '$2 == "00000000" { print $1; exit }' /proc/net/route 2>/dev/null)
+    fi
+
+    if [ -z "$wan_interface" ] && command -v uci >/dev/null 2>&1; then
+        wan_interface=$(uci get network.wan.device 2>/dev/null || uci get network.wan.ifname 2>/dev/null)
+    fi
+
+    if [ -z "$wan_interface" ]; then
+        wan_interface=$(netstat -rn 2>/dev/null | awk '/^0\.0\.0\.0/ {print $NF; exit}')
+    fi
+
+    echo "$wan_interface"
 }
 
 # Function to ensure WAN interface is saved in excluded_interfaces file
 ensure_wan_excluded() {
-    local wan_interface
-    wan_interface=$(get_wan_interface)
+    local settings auto_detect_wan wan_interface
 
+    settings=$(load_settings)
+    auto_detect_wan=$(echo "$settings" | cut -d: -f3)
+
+    if [ "$auto_detect_wan" = "false" ]; then
+        return
+    fi
+
+    wan_interface=$(get_wan_interface)
     [ -z "$wan_interface" ] && return
 
     # Create file if it doesn't exist
@@ -125,20 +265,23 @@ load_excluded_interfaces() {
 
 # Function to get all interfaces to exclude (WAN + user-selected)
 get_excluded_interfaces() {
-    local wan_interface excluded_interfaces user_only all_excluded=""
+    local settings auto_detect_wan wan_interface excluded_interfaces user_only all_excluded=""
 
-    # Get WAN interface
-    wan_interface=$(get_wan_interface)
-    if [ -n "$wan_interface" ]; then
-        all_excluded="$wan_interface"
-        msg "Auto-detected WAN interface: $wan_interface"
+    settings=$(load_settings)
+    auto_detect_wan=$(echo "$settings" | cut -d: -f3)
+
+    if [ "$auto_detect_wan" = "true" ]; then
+        wan_interface=$(get_wan_interface)
+        if [ -n "$wan_interface" ]; then
+            all_excluded="$wan_interface"
+            msg "Auto-detected WAN interface: $wan_interface"
+        fi
     fi
 
     # Get user-selected excluded interfaces
     excluded_interfaces=$(load_excluded_interfaces)
 
-    # Remove WAN from user output
-    if [ -n "$wan_interface" ] && [ -n "$excluded_interfaces" ]; then
+    if [ "$auto_detect_wan" = "true" ] && [ -n "$wan_interface" ] && [ -n "$excluded_interfaces" ]; then
         user_only=$(echo "$excluded_interfaces" | grep -v "^${wan_interface}$")
     else
         user_only="$excluded_interfaces"
@@ -160,8 +303,26 @@ $user_only"
     fi
 }
 
-# For nftables - apply rules for excluded interfaces to prevent routing loops
-apply_nft_excluded_interface_rules() {
+# For nftables - apply explicit interface rules
+apply_nft_explicit_interface_rules() {
+    local included_interfaces
+    included_interfaces=$(get_included_interfaces)
+
+    if [ -n "$included_interfaces" ]; then
+        msg "Processing traffic from interfaces: $(echo "$included_interfaces" | tr '\n' ' ')"
+        echo "$included_interfaces" | while IFS= read -r iface; do
+            [ -n "$iface" ] && nft add rule ip clash prerouting iifname "$iface" jump CLASH_PROCESS
+        done
+
+        nft add chain ip clash CLASH_PROCESS
+    else
+        msg "ERROR: No interfaces specified for explicit mode"
+        return 1
+    fi
+}
+
+# For nftables - apply exclude interface rules
+apply_nft_exclude_interface_rules() {
     local excluded_interfaces
     excluded_interfaces=$(get_excluded_interfaces)
 
@@ -173,10 +334,31 @@ apply_nft_excluded_interface_rules() {
     else
         msg "No excluded interfaces found"
     fi
+
+    nft add rule ip clash prerouting jump CLASH_PROCESS
+    nft add chain ip clash CLASH_PROCESS
 }
 
-# For iptables - apply rules for excluded interfaces to prevent routing loops
-apply_iptables_excluded_interface_rules() {
+# For iptables - apply explicit interface rules
+apply_iptables_explicit_interface_rules() {
+    local included_interfaces
+    included_interfaces=$(get_included_interfaces)
+
+    if [ -n "$included_interfaces" ]; then
+        msg "Processing traffic from interfaces: $(echo "$included_interfaces" | tr '\n' ' ')"
+        echo "$included_interfaces" | while IFS= read -r iface; do
+            [ -n "$iface" ] && iptables -t mangle -A CLASH -i "$iface" -j CLASH_PROCESS
+        done
+
+        iptables -t mangle -N CLASH_PROCESS 2>/dev/null
+    else
+        msg "ERROR: No interfaces specified for explicit mode"
+        return 1
+    fi
+}
+
+# For iptables - apply exclude interface rules
+apply_iptables_exclude_interface_rules() {
     local excluded_interfaces
     excluded_interfaces=$(get_excluded_interfaces)
 
@@ -188,13 +370,16 @@ apply_iptables_excluded_interface_rules() {
     else
         msg "No excluded interfaces found"
     fi
+
+    iptables -t mangle -A CLASH -j CLASH_PROCESS
+    iptables -t mangle -N CLASH_PROCESS 2>/dev/null
 }
 
 # For nftables - apply DHCP exclusion rules
 apply_nft_dhcp_rules() {
     # Exclude DHCP traffic (ports 67-68)
-    nft add rule ip clash prerouting udp sport 67 udp dport 68 return
-    nft add rule ip clash prerouting udp sport 68 udp dport 67 return
+    nft add rule ip clash CLASH_PROCESS udp sport 67 udp dport 68 return
+    nft add rule ip clash CLASH_PROCESS udp sport 68 udp dport 67 return
     nft add rule ip clash output udp sport 67 udp dport 68 return
     nft add rule ip clash output udp sport 68 udp dport 67 return
 
@@ -204,8 +389,8 @@ apply_nft_dhcp_rules() {
 # For iptables - apply DHCP exclusion rules
 apply_iptables_dhcp_rules() {
     # Exclude DHCP traffic (ports 67-68)
-    iptables -t mangle -I CLASH 1 -p udp --sport 67 --dport 68 -j RETURN
-    iptables -t mangle -I CLASH 1 -p udp --sport 68 --dport 67 -j RETURN
+    iptables -t mangle -I CLASH_PROCESS 1 -p udp --sport 67 --dport 68 -j RETURN
+    iptables -t mangle -I CLASH_PROCESS 1 -p udp --sport 68 --dport 67 -j RETURN
     iptables -t mangle -I CLASH_LOCAL 1 -p udp --sport 67 --dport 68 -j RETURN
     iptables -t mangle -I CLASH_LOCAL 1 -p udp --sport 68 --dport 67 -j RETURN
 
@@ -215,11 +400,11 @@ apply_iptables_dhcp_rules() {
 # For nftables - prevent routing loops with marks
 apply_nft_loop_prevention() {
     # Exclude packets already marked by Clash
-    nft add rule ip clash prerouting meta mark 0x0002 return
+    nft add rule ip clash CLASH_PROCESS meta mark 0x0002 return
     nft add rule ip clash output meta mark 0x0002 return
 
     # Prevent already marked packets from re-entering
-    nft add rule ip clash prerouting meta mark and 0xff00 != 0 return
+    nft add rule ip clash CLASH_PROCESS meta mark and 0xff00 != 0 return
     nft add rule ip clash output meta mark and 0xff00 != 0 return
 
     msg "Loop prevention rules applied"
@@ -228,11 +413,11 @@ apply_nft_loop_prevention() {
 # For iptables - prevent routing loops with marks
 apply_iptables_loop_prevention() {
     # Exclude packets already marked by Clash
-    iptables -t mangle -A CLASH -m mark --mark 0x0002 -j RETURN
+    iptables -t mangle -A CLASH_PROCESS -m mark --mark 0x0002 -j RETURN
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0x0002 -j RETURN
 
     # Prevent already marked packets
-    iptables -t mangle -A CLASH -m mark --mark 0xff00/0xff00 -j RETURN
+    iptables -t mangle -A CLASH_PROCESS -m mark --mark 0xff00/0xff00 -j RETURN
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0xff00/0xff00 -j RETURN
 
     msg "Loop prevention rules applied"
@@ -241,7 +426,7 @@ apply_iptables_loop_prevention() {
 # For nftables - apply rules for reserved networks
 apply_nft_reserved_networks() {
     for network in $RESERVED_NETWORKS; do
-        nft add rule ip clash prerouting ip daddr "$network" return
+        nft add rule ip clash CLASH_PROCESS ip daddr "$network" return
         nft add rule ip clash output ip daddr "$network" return
     done
 
@@ -251,8 +436,8 @@ apply_nft_reserved_networks() {
 # For iptables - apply rules for reserved networks
 apply_iptables_reserved_networks() {
     for network in $RESERVED_NETWORKS; do
-        iptables -t mangle -A CLASH -d "$network" -j RETURN
-        iptables -t mangle -A CLASH -s "$network" -j RETURN
+        iptables -t mangle -A CLASH_PROCESS -d "$network" -j RETURN
+        iptables -t mangle -A CLASH_PROCESS -s "$network" -j RETURN
         iptables -t mangle -A CLASH_LOCAL -d "$network" -j RETURN
         iptables -t mangle -A CLASH_LOCAL -s "$network" -j RETURN
     done
@@ -262,19 +447,33 @@ apply_iptables_reserved_networks() {
 
 # For nftables - block QUIC traffic
 apply_nft_quic_blocking() {
-    # Block QUIC first (for YouTube)
-    nft add rule ip clash prerouting udp dport 443 reject
+    local settings block_quic
 
-    msg "QUIC traffic blocked"
+    settings=$(load_settings)
+    block_quic=$(echo "$settings" | cut -d: -f4)
+
+    if [ "$block_quic" = "true" ]; then
+        nft add rule ip clash CLASH_PROCESS udp dport 443 reject
+        msg "QUIC traffic blocked"
+    else
+        msg "QUIC blocking disabled"
+    fi
 }
 
 # For iptables - block QUIC traffic
 apply_iptables_quic_blocking() {
-    # Block QUIC first (for YouTube)
-    iptables -t filter -I INPUT -p udp --dport 443 -j REJECT 2>/dev/null
-    iptables -t filter -I FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
+    local settings block_quic
 
-    msg "QUIC traffic blocked"
+    settings=$(load_settings)
+    block_quic=$(echo "$settings" | cut -d: -f4)
+
+    if [ "$block_quic" = "true" ]; then
+        iptables -t filter -I INPUT -p udp --dport 443 -j REJECT 2>/dev/null
+        iptables -t filter -I FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
+        msg "QUIC traffic blocked"
+    else
+        msg "QUIC blocking disabled"
+    fi
 }
 
 # For nftables - exclude Clash process and ports
@@ -283,8 +482,8 @@ apply_nft_clash_exclusions() {
     nft add rule ip clash output meta skuid 0 return
 
     # Exclude specific ports used by Clash
-    nft add rule ip clash prerouting tcp dport {7890, 7891, 7892, 7893, 7894} return
-    nft add rule ip clash prerouting udp dport {7890, 7891, 7892, 7893, 7894} return
+    nft add rule ip clash CLASH_PROCESS tcp dport {7890, 7891, 7892, 7893, 7894} return
+    nft add rule ip clash CLASH_PROCESS udp dport {7890, 7891, 7892, 7893, 7894} return
     nft add rule ip clash output tcp sport {7890, 7891, 7892, 7893, 7894} return
     nft add rule ip clash output udp sport {7890, 7891, 7892, 7893, 7894} return
 
@@ -294,10 +493,10 @@ apply_nft_clash_exclusions() {
 # For iptables - exclude Clash ports
 apply_iptables_clash_exclusions() {
     # Exclude specific ports used by Clash
-    iptables -t mangle -A CLASH -p tcp --dport 7890:7894 -j RETURN
-    iptables -t mangle -A CLASH -p udp --dport 7890:7894 -j RETURN
-    iptables -t mangle -A CLASH -p tcp --sport 7890:7894 -j RETURN
-    iptables -t mangle -A CLASH -p udp --sport 7890:7894 -j RETURN
+    iptables -t mangle -A CLASH_PROCESS -p tcp --dport 7890:7894 -j RETURN
+    iptables -t mangle -A CLASH_PROCESS -p udp --dport 7890:7894 -j RETURN
+    iptables -t mangle -A CLASH_PROCESS -p tcp --sport 7890:7894 -j RETURN
+    iptables -t mangle -A CLASH_PROCESS -p udp --sport 7890:7894 -j RETURN
 
     iptables -t mangle -A CLASH_LOCAL -p tcp --dport 7890:7894 -j RETURN
     iptables -t mangle -A CLASH_LOCAL -p udp --dport 7890:7894 -j RETURN
@@ -314,8 +513,8 @@ apply_nft_server_exclusions() {
     if [ -n "$server_ips" ]; then
         echo "$server_ips" | while IFS= read -r ip; do
             [ -n "$ip" ] && {
-                nft add rule ip clash prerouting ip saddr "$ip/32" return
-                nft add rule ip clash prerouting ip daddr "$ip/32" return
+                nft add rule ip clash CLASH_PROCESS ip saddr "$ip/32" return
+                nft add rule ip clash CLASH_PROCESS ip daddr "$ip/32" return
                 nft add rule ip clash output ip saddr "$ip/32" return
                 nft add rule ip clash output ip daddr "$ip/32" return
             }
@@ -333,8 +532,8 @@ apply_iptables_server_exclusions() {
     if [ -n "$server_ips" ]; then
         echo "$server_ips" | while IFS= read -r ip; do
             [ -n "$ip" ] && {
-                iptables -t mangle -A CLASH -d "$ip/32" -j RETURN
-                iptables -t mangle -A CLASH -s "$ip/32" -j RETURN
+                iptables -t mangle -A CLASH_PROCESS -d "$ip/32" -j RETURN
+                iptables -t mangle -A CLASH_PROCESS -s "$ip/32" -j RETURN
                 iptables -t mangle -A CLASH_LOCAL -d "$ip/32" -j RETURN
                 iptables -t mangle -A CLASH_LOCAL -s "$ip/32" -j RETURN
             }
@@ -348,32 +547,51 @@ apply_iptables_server_exclusions() {
 # For nftables - apply TPROXY rules
 apply_nft_tproxy_rules() {
     # TPROXY rules with mark to prevent loops
-    nft add rule ip clash prerouting ip protocol tcp tproxy to 127.0.0.1:7894 meta mark set 0x0001
-    nft add rule ip clash prerouting ip protocol udp tproxy to 127.0.0.1:7894 meta mark set 0x0001
+    local fake_ip_range="$1"
+
+    if [ -n "$fake_ip_range" ]; then
+        nft add rule ip clash CLASH_PROCESS ip daddr "$fake_ip_range" ip protocol tcp tproxy to 127.0.0.1:7894 meta mark set 0x0001
+        nft add rule ip clash CLASH_PROCESS ip daddr "$fake_ip_range" ip protocol udp tproxy to 127.0.0.1:7894 meta mark set 0x0001
+        msg "TPROXY rules applied only for fake-ip range: $fake_ip_range"
+    else
+        nft add rule ip clash CLASH_PROCESS ip protocol tcp tproxy to 127.0.0.1:7894 meta mark set 0x0001
+        nft add rule ip clash CLASH_PROCESS ip protocol udp tproxy to 127.0.0.1:7894 meta mark set 0x0001
+        msg "TPROXY rules applied for all traffic"
+    fi
 
     # Mark packets for routing (only unmarked packets)
     nft add rule ip clash output meta mark 0 ip protocol tcp meta mark set 0x0001
     nft add rule ip clash output meta mark 0 ip protocol udp meta mark set 0x0001
-
-    msg "TPROXY rules applied"
 }
 
 # For iptables - apply TPROXY rules
 apply_iptables_tproxy_rules() {
     # TPROXY rules with mark to prevent loops
-    iptables -t mangle -A CLASH -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-    iptables -t mangle -A CLASH -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+    local fake_ip_range="$1"
+
+    if [ -n "$fake_ip_range" ]; then
+        iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+        iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+        msg "TPROXY rules applied only for fake-ip range: $fake_ip_range"
+    else
+        iptables -t mangle -A CLASH_PROCESS -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+        iptables -t mangle -A CLASH_PROCESS -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+        msg "TPROXY rules applied for all traffic"
+    fi
 
     # Mark packets for routing (only unmarked packets)
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -j MARK --set-mark 0x0001
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark 0x0001
-
-    msg "TPROXY rules applied"
 }
 
 # Apply nftables rules dynamically
 apply_nft_rules() {
     local server_ips="$1"
+    local fake_ip_range="$2"
+    local settings mode
+
+    settings=$(load_settings)
+    mode=$(echo "$settings" | cut -d: -f1)
 
     # Delete existing table
     nft delete table ip clash 2>/dev/null
@@ -384,26 +602,81 @@ apply_nft_rules() {
     nft add chain ip clash output '{ type route hook output priority mangle; policy accept; }'
 
     # Apply rules in logical order
+    case "$mode" in
+        "explicit")
+            if ! apply_nft_explicit_interface_rules; then
+                msg "ERROR: Failed to apply explicit interface rules"
+                return 1
+            fi
+            ;;
+        "exclude"|*)
+            apply_nft_exclude_interface_rules
+            ;;
+    esac
+
     apply_nft_dhcp_rules
-    apply_nft_excluded_interface_rules
     apply_nft_loop_prevention
     apply_nft_reserved_networks
     apply_nft_quic_blocking
     apply_nft_clash_exclusions
     apply_nft_server_exclusions "$server_ips"
-    apply_nft_tproxy_rules
+    apply_nft_tproxy_rules "$fake_ip_range"
 
     msg "nftables rules applied successfully"
+}
+
+# Apply iptables rules dynamically
+apply_iptables_rules() {
+    local server_ips="$1"
+    local fake_ip_range="$2"
+    local settings mode
+
+    settings=$(load_settings)
+    mode=$(echo "$settings" | cut -d: -f1)
+
+    iptables -t mangle -N CLASH 2>/dev/null
+    iptables -t mangle -N CLASH_LOCAL 2>/dev/null
+
+    case "$mode" in
+        "explicit")
+            if ! apply_iptables_explicit_interface_rules; then
+                msg "ERROR: Failed to apply explicit interface rules"
+                return 1
+            fi
+            ;;
+        "exclude"|*)
+            apply_iptables_exclude_interface_rules
+            ;;
+    esac
+
+    apply_iptables_dhcp_rules
+    apply_iptables_loop_prevention
+    apply_iptables_reserved_networks
+    apply_iptables_quic_blocking
+    apply_iptables_clash_exclusions
+    apply_iptables_server_exclusions "$server_ips"
+    apply_iptables_tproxy_rules "$fake_ip_range"
+
+    iptables -t mangle -A PREROUTING -j CLASH
+    iptables -t mangle -A OUTPUT -j CLASH_LOCAL
+
+    msg "iptables rules applied successfully"
 }
 
 start() {
     msg "Starting Clash rules script"
 
-    # Ensure WAN interface is in excluded list
-    ensure_wan_excluded
+    local settings mode
+    settings=$(load_settings)
+    mode=$(echo "$settings" | cut -d: -f1)
 
-    local server_ips
+    if [ "$mode" = "exclude" ]; then
+        ensure_wan_excluded
+    fi
+
+    local server_ips fake_ip_range
     server_ips=$(extract_server_ips)
+    fake_ip_range=$(extract_fake_ip_range)
 
     if [ $? -eq 0 ] && [ -n "$server_ips" ]; then
         msg "Extracted server IPs: $(echo "$server_ips" | tr '\n' ' ')"
@@ -411,36 +684,31 @@ start() {
         msg "WARNING: No server IPs extracted from config"
     fi
 
+    if [ -n "$fake_ip_range" ]; then
+        msg "Detected fake-ip range: $fake_ip_range - TPROXY will be applied only to this range"
+    else
+        msg "No fake-ip configuration detected - TPROXY will be applied to all traffic"
+    fi
+
     if hash nft 2>/dev/null; then
         msg "Using nftables for traffic redirection"
         # Apply nftables rules dynamically
-        apply_nft_rules "$server_ips"
-        ip route add local default dev lo table 100
-        ip rule add fwmark 0x0001 table 100
+        if apply_nft_rules "$server_ips" "$fake_ip_range"; then
+            ip route add local default dev lo table 100
+            ip rule add fwmark 0x0001 table 100
+        else
+            msg "ERROR: Failed to apply nftables rules"
+            return 1
+        fi
     elif hash iptables 2>/dev/null; then
         msg "Using iptables for traffic redirection"
-        # Create chains
-        iptables -t mangle -N CLASH 2>/dev/null
-        iptables -t mangle -N CLASH_LOCAL 2>/dev/null
-
-        # Apply rules in logical order
-        apply_iptables_dhcp_rules
-        apply_iptables_excluded_interface_rules
-        apply_iptables_loop_prevention
-        apply_iptables_reserved_networks
-        apply_iptables_quic_blocking
-        apply_iptables_clash_exclusions
-        apply_iptables_server_exclusions "$server_ips"
-        apply_iptables_tproxy_rules
-
-        # Hook chains into main tables
-        iptables -t mangle -A PREROUTING -j CLASH
-        iptables -t mangle -A OUTPUT -j CLASH_LOCAL
-
-        ip route add local default dev lo table 100
-        ip rule add fwmark 0x0001 table 100
-
-        msg "iptables rules applied successfully"
+        if apply_iptables_rules "$server_ips" "$fake_ip_range"; then
+            ip route add local default dev lo table 100
+            ip rule add fwmark 0x0001 table 100
+        else
+            msg "ERROR: Failed to apply iptables rules"
+            return 1
+        fi
     else
         msg "ERROR: Neither nftables nor iptables found"
         return 1
@@ -463,6 +731,8 @@ stop() {
         iptables -t mangle -D PREROUTING -j CLASH 2>/dev/null
         iptables -t mangle -F CLASH 2>/dev/null
         iptables -t mangle -X CLASH 2>/dev/null
+        iptables -t mangle -F CLASH_PROCESS 2>/dev/null
+        iptables -t mangle -X CLASH_PROCESS 2>/dev/null
         iptables -t mangle -D OUTPUT -j CLASH_LOCAL 2>/dev/null
         iptables -t mangle -F CLASH_LOCAL 2>/dev/null
         iptables -t mangle -X CLASH_LOCAL 2>/dev/null
