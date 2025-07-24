@@ -17,12 +17,12 @@
 			"path": "ssclash/config"
 		}
 	},
-	"admin/services/ssclash/interfaces": {
+	"admin/services/ssclash/settings": {
 		"title": "Settings",
 		"order": 20,
 		"action": {
 			"type": "view",
-			"path": "ssclash/interfaces"
+			"path": "ssclash/settings"
 		}
 	},
 	"admin/services/ssclash/log": {

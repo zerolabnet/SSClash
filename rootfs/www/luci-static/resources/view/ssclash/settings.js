@@ -101,10 +101,12 @@ async function loadInterfacesByMode(mode) {
 async function saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, interfaces) {
     try {
         const settingsContent = `INTERFACE_MODE=${mode}\nAUTO_DETECT_LAN=${autoDetectLan}\nAUTO_DETECT_WAN=${autoDetectWan}\nBLOCK_QUIC=${blockQuic}\n`;
+
         await fs.write('/opt/clash/settings', settingsContent);
 
         const filename = mode === 'explicit' ? '/opt/clash/included_interfaces' : '/opt/clash/excluded_interfaces';
         const interfacesContent = interfaces.join('\n') + (interfaces.length > 0 ? '\n' : '');
+
         await fs.write(filename, interfacesContent);
 
         const oppositeFilename = mode === 'explicit' ? '/opt/clash/excluded_interfaces' : '/opt/clash/included_interfaces';
@@ -124,7 +126,7 @@ async function detectLanBridge() {
 
         for (const iface of interfaces) {
             const name = iface.getName();
-            if (name && name.match(/^br-|^bridge/) && iface.isUp()) {
+            if (name && name.match(/^br-/) && iface.isUp()) {
                 const addrs = iface.getIPAddrs();
                 for (const addr of addrs) {
                     const ip = addr.split('/')[0];
@@ -135,8 +137,7 @@ async function detectLanBridge() {
             }
         }
 
-        const brLanExists = interfaces.some(iface => iface.getName() === 'br-lan' && iface.isUp());
-        return brLanExists ? 'br-lan' : null;
+        return null;
     } catch (e) {
         console.error('Failed to detect LAN bridge:', e);
         return null;
@@ -622,8 +623,10 @@ return view.extend({
                     selected.push(cb.value);
                 });
 
-                await saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, selected);
-                updateCurrentStatus(mode, autoDetectLan, autoDetectWan, selected, detectedLanBridge, detectedWanInterface);
+                const success = await saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, selected);
+                if (success) {
+                    updateCurrentStatus(mode, autoDetectLan, autoDetectWan, selected, detectedLanBridge, detectedWanInterface);
+                }
             }
         }, _('Save Settings'));
 
