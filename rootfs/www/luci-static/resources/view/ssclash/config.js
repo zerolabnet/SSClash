@@ -158,7 +158,7 @@ return view.extend({
                 'id': 'editor',
                 'style': 'width: 100%; height: 640px; margin-bottom: 15px;'
             }),
-            E('div', { 'style': 'text-align: center; margin-top: 15px;' }, [
+            E('div', { 'style': 'text-align: center; margin-top: 15px; margin-bottom: 20px;' }, [
                 E('button', {
                     'class': 'btn',
                     'click': saveAndApply
