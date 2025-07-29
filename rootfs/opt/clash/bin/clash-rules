@@ -506,6 +506,19 @@ apply_nft_tproxy_proxy() {
     msg "TPROXY rules applied in proxy chain"
 }
 
+# For nftables - apply interface exclusion rules in output chain
+apply_nft_interface_exclusion_output() {
+    local excluded_interfaces
+    excluded_interfaces=$(get_excluded_interfaces)
+
+    if [ -n "$excluded_interfaces" ]; then
+        msg "Excluded interfaces in output: $(echo "$excluded_interfaces" | tr '\n' ' ')"
+        echo "$excluded_interfaces" | while IFS= read -r iface; do
+            [ -n "$iface" ] && nft add rule inet clash output oifname "$iface" return
+        done
+    fi
+}
+
 # For nftables - exclude Clash process and ports in output chain
 apply_nft_clash_exclusions_output() {
     # Exclude Clash process itself (by user ID if available)
@@ -520,6 +533,9 @@ apply_nft_clash_exclusions_output() {
 
 # For nftables - apply output chain rules
 apply_nft_output_rules() {
+    # Apply interface exclusions for output traffic
+    apply_nft_interface_exclusion_output
+
     # Exclude DHCP traffic (ports 67-68)
     nft add rule inet clash output udp sport 67 udp dport 68 return
     nft add rule inet clash output udp sport 68 udp dport 67 return
@@ -700,6 +716,19 @@ apply_iptables_tproxy_rules() {
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark 0x0001
 }
 
+# For iptables - apply interface exclusion rules in output chain
+apply_iptables_interface_exclusion_output() {
+    local excluded_interfaces
+    excluded_interfaces=$(get_excluded_interfaces)
+
+    if [ -n "$excluded_interfaces" ]; then
+        msg "Excluded interfaces in output (iptables): $(echo "$excluded_interfaces" | tr '\n' ' ')"
+        echo "$excluded_interfaces" | while IFS= read -r iface; do
+            [ -n "$iface" ] && iptables -t mangle -I CLASH_LOCAL 1 -o "$iface" -j RETURN
+        done
+    fi
+}
+
 # Apply nftables rules dynamically - Two-stage approach
 apply_nft_rules() {
     local server_ips="$1"
@@ -767,6 +796,9 @@ apply_iptables_rules() {
     iptables -t mangle -N CLASH 2>/dev/null
     iptables -t mangle -N CLASH_LOCAL 2>/dev/null
     iptables -t mangle -N CLASH_PROCESS 2>/dev/null
+
+    # Apply interface exclusions for output traffic
+    apply_iptables_interface_exclusion_output
 
     # Apply interface rules based on mode
     case "$mode" in
