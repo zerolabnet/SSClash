@@ -10,7 +10,7 @@
 				"/opt/clash/bin/clash": [ "read", "stat", "exec" ],
 				"/proc/net/dev": [ "read" ],
 				"/sbin/logread": [ "exec" ],
-				"/usr/bin/uname": [ "exec" ]
+				"/bin/uname": [ "exec" ]
 			},
 			"ubus": {
 				"file": [ "read", "stat", "exec" ],
