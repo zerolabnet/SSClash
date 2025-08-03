@@ -3,6 +3,7 @@
 # Setup Guide
 
 ## Step 1: Update Package List
+
 Update the package list to ensure you have the latest available versions.
 
 ```bash
@@ -10,6 +11,7 @@ opkg update
 ```
 
 ## Step 2: Install Required Packages
+
 Install the necessary kernel module for nftables.
 
 ```bash
@@ -19,16 +21,29 @@ opkg install kmod-nft-tproxy
 For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
 
 ## Step 3: Download and Install `luci-app-ssclash` Package
+
 Download the SSClash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.7.1/luci-app-ssclash_2.7.1-1_all.ipk -o /tmp/luci-app-ssclash_2.7.1-1_all.ipk
-opkg install /tmp/luci-app-ssclash_2.7.1-1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.8.0/luci-app-ssclash_2.8.0-1_all.ipk -o /tmp/luci-app-ssclash_2.8.0-1_all.ipk
+opkg install /tmp/luci-app-ssclash_2.8.0-1_all.ipk
 rm /tmp/*.ipk
 ```
 
-## Step 4: Download Clash.Meta Kernel
-Navigate to the `bin` directory and download the Clash.Meta Kernel. Choose the appropriate architecture.
+## Step 4: Automatic Mihomo Kernel Management
+
+Go to **Settings** → **Mihomo Kernel Management** and click **Download Latest Kernel**. The system will:
+
+- Automatically detect your router's architecture
+- Download the latest compatible Mihomo kernel
+- Install and configure it properly
+- Show kernel status and version information
+
+**Important:** Restart the Clash service after kernel installation.
+
+### Manual Kernel Installation (Optional)
+
+If you prefer manual installation, navigate to the `bin` directory and download the Clash.Meta Kernel:
 
 ```bash
 cd /opt/clash/bin
@@ -37,57 +52,106 @@ cd /opt/clash/bin
 For **amd64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.11/mihomo-linux-amd64-compatible-v1.19.11.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-amd64-compatible-v1.19.12.gz -o clash.gz
 ```
 
 For **arm64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.11/mihomo-linux-arm64-v1.19.11.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-arm64-v1.19.12.gz -o clash.gz
 ```
 
 For **mipsel_24kc** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.11/mihomo-linux-mipsle-softfloat-v1.19.11.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-mipsle-softfloat-v1.19.12.gz -o clash.gz
 ```
 
 Need a different architecture? Visit the [MetaCubeX Release Page](https://github.com/MetaCubeX/mihomo/releases) and choose the one that matches your device.
 
-## Step 5: Prepare the Clash Binary
-Decompress the downloaded file and make it executable.
+Decompress and make executable:
 
 ```bash
 gunzip clash.gz
 chmod +x clash
 ```
 
-## Step 6: Managing Clash from LuCI interface
-I've written a simple interface for managing Clash from LuCI interface `luci-app-ssclash`. Edit Clash config and Apply.
+## Step 5: Configure Interface Processing Mode
+
+SSClash offers two interface processing modes:
+
+### Exclude Mode (Universal approach) - **Recommended for most users**
+
+- **Default mode** that processes traffic from ALL interfaces except selected ones
+- Automatically detects and excludes WAN interface
+- Simple to configure - just select interfaces to bypass proxy
+- Best for typical home router setups
+
+### Explicit Mode (Precise control) - **For advanced users**
+
+- Processes traffic ONLY from selected interfaces
+- More secure but requires manual configuration
+- Automatically detects LAN bridge when enabled
+- Ideal for complex network setups requiring precise control
+
+### Additional Settings:
+
+- **Block QUIC traffic**: Blocks UDP port 443 to improve proxy effectiveness for services like YouTube
 
 <p align="center">
  <img src="scr-01.png" width="100%">
 </p>
 
-Select network interfaces to exclude from proxy. These interfaces will use direct routing (bypass proxy). WAN interface is automatically detected and excluded.
+## Step 6: Clash Configuration Management
+
+Edit your Clash configuration with the built-in editor featuring:
+
+- **Syntax highlighting** for YAML files
+- **Live service control** (Start/Stop/Restart)
+- **Service status indicator**
+- **Save & Apply** functionality with automatic service reload
 
 <p align="center">
  <img src="scr-02.png" width="100%">
 </p>
 
-## Step 7: You can access to Dashboard from LuCI interface or manual
-You can access the Dashboard at:
+## Step 7: Local Rulesets Management
 
-```
-http://ROUTER_IP:9090/ui/
-```
+Create and manage local rule files for use with `rule-providers`:
+
+- **Create custom rule lists** with validation
+- **Edit existing rulesets** with syntax highlighting
+- **Organized file management** with collapsible sections
+- **Usage**: Reference in config as `type: file, format: text, path: ./lst/your_list.txt`
 
 <p align="center">
  <img src="scr-03.png" width="100%">
 </p>
 
+## Step 8: Real-time Log Monitoring
+
+Monitor Clash activity with the integrated log viewer:
+
+- **Real-time log streaming** with automatic updates
+- **Filtered display** showing only Clash-related entries
+- **Color-coded log levels** and daemon identification
+- **Auto-scroll** to latest entries
+
+<p align="center">
+ <img src="scr-04.png" width="100%">
+</p>
+
+## Step 9: Dashboard Access
+
+Access the Clash dashboard directly from the LuCI interface with automatic configuration detection.
+
+<p align="center">
+ <img src="scr-05.png" width="100%">
+</p>
+
 # Remove Clash
-To remove Clash, delete the related files, `luci-app-ssclash` package and kernel module `kmod-nft-tproxy` or `iptables-mod-tproxy`.
+
+To remove Clash completely:
 
 ```bash
 opkg remove luci-app-ssclash kmod-nft-tproxy
@@ -96,20 +160,18 @@ rm -rf /opt/clash
 
 ---
 
-# Extra info (optional): Automating Clash Rules Update in OpenWrt whenever the Internet interface is brought up
+# Extra Info (optional): Automating Clash Rules Update
 
-To automatically update the rules for Clash whenever the Internet interface is brought up in OpenWrt, follow these step:
+To automatically update Clash rules when the Internet interface comes up:
 
-## Create the Shell Script
+## Create the Hotplug Script
 
-1. Open a terminal and create a new shell script named `40-clash_rules` in the `/etc/hotplug.d/iface/` directory:
-
+1. Create the script in `/etc/hotplug.d/iface/40-clash_rules`:
 ```bash
 vi /etc/hotplug.d/iface/40-clash_rules
 ```
 
-2. [Insert the following script content](https://raw.githubusercontent.com/zerolabnet/ssclash/main/update_all_rule_providers.sh) (change `api_base_url` if needed):
-
+2. Add the following content:
 ```sh
 #!/bin/sh
 
@@ -153,4 +215,4 @@ done
 
 3. Save and exit the editor.
 
-The script will now automatically run whenever the Internet interface is brought up. This ensures that the rules for Clash are updated as soon as the router is rebooted and connected to the Internet.
+This script automatically updates rule providers whenever the Internet interface comes up, ensuring rules are refreshed after router reboots.

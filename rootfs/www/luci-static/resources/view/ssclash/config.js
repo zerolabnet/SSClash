@@ -16,75 +16,91 @@ const callServiceList = rpc.declare({
 
 async function getServiceStatus() {
     try {
-        return Object.values((await callServiceList('clash'))['clash']['instances'])[0]?.running;
-    } catch (ignored) {
+        const instances = (await callServiceList('clash'))['clash']?.instances;
+        return Object.values(instances || {})[0]?.running || false;
+    } catch (e) {
         return false;
     }
 }
 
-async function startService() {
+async function handleServiceAction(actions, errorMsg) {
     if (startStopButton) startStopButton.disabled = true;
-    return fs.exec('/etc/init.d/clash', ['start'])
-        .then(() => fs.exec('/etc/init.d/clash', ['enable']))
-        .catch(function(e) {
-            ui.addNotification(null, E('p', _('Unable to start and enable service: %s').format(e.message)), 'error');
-        })
-        .finally(() => {
-            if (startStopButton) startStopButton.disabled = false;
-        });
+    try {
+        for (const action of actions) {
+            await fs.exec('/etc/init.d/clash', [action]);
+        }
+    } catch (e) {
+        ui.addNotification(null, E('p', errorMsg.format(e.message)), 'error');
+    } finally {
+        if (startStopButton) startStopButton.disabled = false;
+    }
+}
+
+async function startService() {
+    await handleServiceAction(['start', 'enable'], _('Unable to start and enable service: %s'));
 }
 
 async function stopService() {
-    if (startStopButton) startStopButton.disabled = true;
-    return fs.exec('/etc/init.d/clash', ['stop'])
-        .then(() => fs.exec('/etc/init.d/clash', ['disable']))
-        .catch(function(e) {
-            ui.addNotification(null, E('p', _('Unable to stop and disable service: %s').format(e.message)), 'error');
-        })
-        .finally(() => {
-            if (startStopButton) startStopButton.disabled = false;
-        });
+    await handleServiceAction(['stop', 'disable'], _('Unable to stop and disable service: %s'));
+}
+
+async function pollStatus(targetStatus, timeout = 5000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+        if (await getServiceStatus() === targetStatus) {
+            return true;
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    return false;
 }
 
 async function toggleService() {
     const running = await getServiceStatus();
     if (running) {
         await stopService();
+        await pollStatus(false);
     } else {
         await startService();
+        await pollStatus(true);
     }
-    setTimeout(() => {
-        window.location.reload();
-    }, 1000);
+    window.location.reload();
+}
+
+function parseYamlValue(yaml, key) {
+    const regex = new RegExp(`^\\s*${key}:[ \t]*([^#\n\r]*)`, 'm');
+    const match = yaml.match(regex);
+    return match ? match[1].trim() : null;
 }
 
 async function openDashboard() {
     const newWindow = window.open('about:blank', '_blank');
-
     if (!newWindow) {
         ui.addNotification(null, E('p', _('Popup was blocked. Please allow popups for this site.')), 'warning');
         return;
     }
 
     try {
-        const running = await getServiceStatus();
-
-        if (running) {
-            const port = 9090;
-            const path = 'ui';
-            const protocol = window.location.protocol;
-            const hostname = window.location.hostname;
-
-            const url = `${protocol}//${hostname}:${port}/${path}/?hostname=${hostname}&port=${port}`;
-            newWindow.location.href = url;
-        } else {
+        if (!(await getServiceStatus())) {
             newWindow.close();
             ui.addNotification(null, E('p', _('Service is not running.')), 'error');
+            return;
         }
+
+        const config = await fs.read('/opt/clash/config.yaml');
+        const externalController = parseYamlValue(config, 'external-controller');
+        const port = externalController ? externalController.split(':').pop() : '9090';
+
+        const path = parseYamlValue(config, 'external-ui') || 'ui';
+        const protocol = window.location.protocol;
+        const hostname = window.location.hostname;
+
+        const url = `${protocol}//${hostname}:${port}/${path}/?hostname=${hostname}&port=${port}`;
+        newWindow.location.href = url;
     } catch (error) {
         newWindow.close();
-        console.error('Error checking service status:', error);
-        ui.addNotification(null, E('p', _('Failed to check service status.')), 'error');
+        console.error(_('Error opening dashboard:'), error);
+        ui.addNotification(null, E('p', _('Failed to open dashboard: %s').format(error.message)), 'error');
     }
 }
 
@@ -122,26 +138,25 @@ return view.extend({
         const running = await getServiceStatus();
 
         const saveAndApply = async function() {
+            if (startStopButton) startStopButton.disabled = true;
             try {
                 const value = editor.getValue().trim() + '\n';
                 await fs.write('/opt/clash/config.yaml', value);
                 ui.addNotification(null, E('p', _('Configuration saved successfully.')), 'info');
                 await fs.exec('/etc/init.d/clash', ['reload']);
                 ui.addNotification(null, E('p', _('Service reloaded successfully.')), 'info');
-                setTimeout(() => window.location.reload(), 1000);
+                await pollStatus(true);
+                window.location.reload();
             } catch(e) {
                 ui.addNotification(null, E('p', _('Unable to save contents: %s').format(e.message)), 'error');
+            } finally {
+                if (startStopButton) startStopButton.disabled = false;
             }
         };
 
         const view = E([
-            E('div', {
-                'style': 'margin-bottom: 20px;'
-            }, [
-                E('button', {
-                    'class': 'btn',
-                    'click': openDashboard
-                }, _('Open Dashboard')),
+            E('div', { 'style': 'margin-bottom: 20px;' }, [
+                E('button', { 'class': 'btn', 'click': openDashboard }, _('Open Dashboard')),
                 (startStopButton = E('button', {
                     'class': 'btn',
                     'click': toggleService,

@@ -4,7 +4,6 @@ START=21
 STOP=79
 USE_PROCD=1
 
-FLAG_FILE="/tmp/dnsmasq_once"
 CLASH_DIR="/opt/clash"
 CLASH_BIN="${CLASH_DIR}/bin/clash"
 CLASH_RULES="${CLASH_DIR}/bin/clash-rules"
@@ -196,24 +195,16 @@ stop_service() {
 	# Restore DNS settings
 	restore_dns
 
-	# Restart dnsmasq only if flag is not set
-	if [ ! -f "$FLAG_FILE" ]; then
-		restart_dnsmasq || {
-			msg "WARNING: Failed to restart dnsmasq during stop"
-		}
-	fi
-
-	# Clear the flag
-	rm -f "$FLAG_FILE"
+	# Restart dnsmasq
+	restart_dnsmasq || {
+		msg "WARNING: Failed to restart dnsmasq during stop"
+	}
 
 	msg "Clash service stopped"
 }
 
 reload_service() {
 	msg "Reloading Clash service..."
-
-	# Set flag to avoid unnecessary dnsmasq restart
-	touch "$FLAG_FILE"
 
 	stop
 	start

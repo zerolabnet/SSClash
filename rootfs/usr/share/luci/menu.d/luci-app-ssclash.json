@@ -7,7 +7,8 @@
 		},
 		"depends": {
 			"acl": [ "luci-app-ssclash" ]
-		}
+		},
+		"i18n": "ssclash"
 	},
 	"admin/services/ssclash/config": {
 		"title": "Configuration",
@@ -25,9 +26,17 @@
 			"path": "ssclash/settings"
 		}
 	},
+	"admin/services/ssclash/rulesets": {
+		"title": "Rulesets",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "ssclash/rulesets"
+		}
+	},
 	"admin/services/ssclash/log": {
 		"title": "Log",
-		"order": 30,
+		"order": 40,
 		"action": {
 			"type": "view",
 			"path": "ssclash/log"

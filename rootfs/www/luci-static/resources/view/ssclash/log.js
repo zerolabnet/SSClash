@@ -6,6 +6,7 @@
 let editor = null;
 let lastLogLength = 0;
 let loggerPath = null;
+const MAX_INITIAL_LINES = 100;
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -35,51 +36,103 @@ async function initializeAceEditor() {
 
 function startPolling() {
     poll.add(() => {
-        if (loggerPath) {
-            return fs.exec_direct(loggerPath, ['-e', 'clash'])
-                .then(res => {
-                    if (res) {
-                        const lines = res.trim().split('\n');
-                        if (lines.length > lastLogLength) {
-                            const newLines = lines.slice(lastLogLength);
-                            const processedNewLines = newLines.map(processLogLine).join('\n');
+        if (!loggerPath) return;
 
+        return fs.exec_direct(loggerPath, ['-e', 'clash'])
+            .then(res => {
+                if (res) {
+                    const all_lines = res.trim().split('\n');
+                    const total_lines_count = all_lines.length;
+
+                    if (total_lines_count < lastLogLength) {
+                        editor.setValue('', -1);
+                        lastLogLength = 0;
+                    }
+
+                    let lines_to_process;
+
+                    if (lastLogLength === 0 && total_lines_count > MAX_INITIAL_LINES) {
+                        const skippedCount = total_lines_count - MAX_INITIAL_LINES;
+                        editor.session.insert({ row: 0, column: 0 }, _('--- Log truncated, skipped %d older lines ---').format(skippedCount) + '\n');
+                        lines_to_process = all_lines.slice(-MAX_INITIAL_LINES);
+                    }
+                    else if (total_lines_count > lastLogLength) {
+                        lines_to_process = all_lines.slice(lastLogLength);
+                    }
+
+                    if (lines_to_process && lines_to_process.length > 0) {
+                        const processedNewLines = lines_to_process
+                            .map(processLogLine)
+                            .filter(Boolean)
+                            .join('\n');
+
+                        if (processedNewLines) {
                             editor.session.insert({
                                 row: editor.session.getLength(),
                                 column: 0
-                            }, (lastLogLength > 0 ? '\n' : '') + processedNewLines);
+                            }, (editor.session.getLength() > 1 ? '\n' : '') + processedNewLines);
 
-                            lastLogLength = lines.length;
                             editor.scrollToLine(editor.session.getLength(), false, true, function() {});
                         }
-                    } else if (lastLogLength > 0) {
-                        editor.setValue('', 1);
-                        lastLogLength = 0;
                     }
-                })
-                .catch(err => {
-                    console.error('Error executing logread:', err);
-                });
-        }
+
+                    lastLogLength = total_lines_count;
+
+                } else if (lastLogLength > 0) {
+                    editor.setValue('', -1);
+                    lastLogLength = 0;
+                }
+            })
+            .catch(err => {
+                console.error(_('Error executing logread:'), err);
+                if (lastLogLength === 0) {
+                     editor.setValue(_('Error reading logs: %s').format(err.message), -1);
+                     lastLogLength = 1;
+                }
+            });
     });
 }
 
 function processLogLine(line) {
-    const msgMatch = line.match(/msg="(.*?)"/);
-    if (msgMatch) {
-        return line.split(']: ')[0] + ']: ' + msgMatch[1];
+    const match = line.match(/^.*? ([\d:]{8}) .*?daemon\.(\w+)\s+(clash(?:-rules)?)\b\[\d+\]:\s*(.*)$/);
+
+    if (!match) {
+        return null;
     }
-    return line;
+
+    const [, time, level, daemon, originalMessage] = match;
+    let message = originalMessage;
+
+    const msgMatch = originalMessage.match(/^msg="(.*)"$/);
+    if (msgMatch) {
+        message = msgMatch[1];
+    }
+
+    const clashTimeMatch = message.match(/^time="[^"]+"\s+level=\w+\s+msg="(.*)"$/);
+    if (clashTimeMatch) {
+        message = clashTimeMatch[1];
+    }
+
+    let marker = '⚪';
+    if (daemon === 'clash') {
+        marker = '🔵';
+    } else if (daemon === 'clash-rules') {
+        marker = '🟢';
+    }
+
+    return `[${time}] ${marker} [${daemon}] [${level.toUpperCase()}] ${message}`;
 }
 
 return view.extend({
     load: function () {
         return fs.stat('/sbin/logread').then(stat => {
             loggerPath = stat && stat.path ? stat.path : null;
+        }).catch(() => {
+            loggerPath = null;
         });
     },
 
-    render: function (stat) {
+    render: function () {
         const view = E(
             'div',
             { class: 'cbi-map' },

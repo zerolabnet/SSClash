@@ -5,62 +5,158 @@
 'require network';
 
 async function getNetworkInterfaces() {
+    const result = [];
+    const seenInterfaces = new Set();
+
+    try {
+        const sysNetResult = await fs.exec('ls', ['/sys/class/net/']);
+        if (sysNetResult.code === 0 && sysNetResult.stdout) {
+            const sysNetInterfaces = sysNetResult.stdout.trim().split('\n');
+            sysNetInterfaces.forEach(function(name) {
+                name = name.trim();
+                if (name && !seenInterfaces.has(name) && name !== 'lo') {
+                    seenInterfaces.add(name);
+                    result.push(createInterfaceEntry(name));
+                }
+            });
+        }
+    } catch (e) {
+        console.error('Failed to read /sys/class/net:', e);
+    }
+
+    try {
+        const ipResult = await fs.exec('ip', ['link', 'show']);
+        if (ipResult.code === 0 && ipResult.stdout) {
+            const lines = ipResult.stdout.split('\n');
+            lines.forEach(function(line) {
+                const match = line.match(/^\d+:\s+([^:@]+)/);
+                if (match && match[1] && match[1] !== 'lo') {
+                    const name = match[1];
+                    if (!seenInterfaces.has(name)) {
+                        seenInterfaces.add(name);
+                        result.push(createInterfaceEntry(name));
+                    }
+                }
+            });
+        }
+    } catch (e) {
+        console.error('Failed to execute ip link:', e);
+    }
+
+    try {
+        const bridgeResult = await fs.exec('brctl', ['show']);
+        if (bridgeResult.code === 0 && bridgeResult.stdout) {
+            const lines = bridgeResult.stdout.split('\n');
+            lines.forEach(function(line) {
+                const match = line.match(/^([^\s]+)\s/);
+                if (match && match[1] && match[1] !== 'bridge') {
+                    const name = match[1];
+                    if (!seenInterfaces.has(name)) {
+                        seenInterfaces.add(name);
+                        result.push(createInterfaceEntry(name));
+                    }
+                }
+            });
+        }
+    } catch (e) {
+    }
+
     try {
         const interfaces = await network.getDevices();
-        const result = [];
-
         interfaces.forEach(function(iface) {
-            if (iface.getName() && iface.getType() !== 'bridge' && iface.isUp()) {
+            if (iface.getName() && iface.getName() !== 'lo') {
                 const name = iface.getName();
-                let category = 'other';
-                let icon = '🔗';
-
-                if (name.match(/^(eth|lan|br|bridge|switch|bond|team)/)) {
-                    category = 'ethernet';
-                    icon = '🌐';
-                } else if (name.match(/^(wlan|wifi|ath|phy|ra|mt|rtl|iwl)/)) {
-                    category = 'wifi';
-                    icon = '📶';
-                } else if (name.match(/^(wan|ppp|modem|3g|4g|5g|lte|gsm|cdma|hsdpa|hsupa|umts)/)) {
-                    category = 'wan';
-                    icon = '🌍';
-                } else if (name.match(/^(tun|tap|vpn|wg|nord|express|surf|pia|ovpn|openvpn|l2tp|pptp|sstp|ikev2|ipsec)/)) {
-                    category = 'vpn';
-                    icon = '🔐';
-                } else if (name.match(/^(usb|rndis|cdc|ecm|ncm|qmi|rmnet|mbim)/)) {
-                    category = 'usb';
-                    icon = '🔌';
-                } else if (name.match(/^(veth|macvlan|ipvlan|dummy|vrf|vcan|vxcan)/)) {
-                    category = 'virtual';
-                    icon = '💭';
+                if (!seenInterfaces.has(name)) {
+                    seenInterfaces.add(name);
+                    result.push(createInterfaceEntry(name));
                 }
-
-                result.push({
-                    name: name,
-                    description: name,
-                    category: category,
-                    icon: icon
-                });
             }
         });
+    } catch (e) {
+        console.warn('LuCI network API not available:', e.message);
+    }
 
-        const categoryOrder = ['wan', 'ethernet', 'wifi', 'usb', 'vpn', 'virtual', 'other'];
-        return result.sort((a, b) => {
-            const catA = categoryOrder.indexOf(a.category);
-            const catB = categoryOrder.indexOf(b.category);
-            if (catA !== catB) return catA - catB;
-            return a.name.localeCompare(b.name);
+    try {
+        const networks = await network.getNetworks();
+        networks.forEach(function(net) {
+            const device = net.getL3Device();
+            if (device && device.getName() && device.getName() !== 'lo') {
+                const name = device.getName();
+                if (!seenInterfaces.has(name)) {
+                    seenInterfaces.add(name);
+                    result.push(createInterfaceEntry(name));
+                }
+            }
         });
     } catch (e) {
-        console.error('Failed to get network interfaces:', e);
-        return [];
+        console.warn('LuCI network.getNetworks() not available:', e.message);
     }
+
+    if (result.length === 0) {
+        console.warn('No network interfaces found on this system');
+    } else {
+        console.log(`Found ${result.length} network interfaces:`, result.map(i => i.name).join(', '));
+    }
+
+    const categoryOrder = ['wan', 'ethernet', 'wifi', 'usb', 'vpn', 'virtual', 'other'];
+    return result.sort((a, b) => {
+        const catA = categoryOrder.indexOf(a.category);
+        const catB = categoryOrder.indexOf(b.category);
+        if (catA !== catB) return catA - catB;
+        return a.name.localeCompare(b.name);
+    });
+}
+
+function createInterfaceEntry(name) {
+    let category = 'other';
+    let icon = '🔗';
+
+    if (name.match(/\.\d+$/)) {
+        category = 'ethernet';
+        icon = '🏷️';
+    } else if (name.match(/^(br-|bridge)/)) {
+        category = 'ethernet';
+        icon = '🔀';
+    } else if (name.match(/^(eth|lan|switch|bond|team)/)) {
+        category = 'ethernet';
+        icon = '🌐';
+    } else if (name.match(/^(wlan|wifi|ath|phy|ra|mt|rtl|iwl)/)) {
+        category = 'wifi';
+        icon = '📶';
+    } else if (name.match(/^(wan|ppp|modem|3g|4g|5g|lte|gsm|cdma|hsdpa|hsupa|umts)/)) {
+        category = 'wan';
+        icon = '🌍';
+    } else if (name.match(/^(tun|tap|vpn|wg|nord|express|surf|pia|ovpn|openvpn|l2tp|pptp|sstp|ikev2|ipsec)/)) {
+        category = 'vpn';
+        icon = '🔐';
+    } else if (name.match(/^(usb|rndis|cdc|ecm|ncm|qmi|rmnet|mbim)/)) {
+        category = 'usb';
+        icon = '🔌';
+    } else if (name.match(/^(veth|macvlan|ipvlan|dummy|vrf|vcan|vxcan)/)) {
+        category = 'virtual';
+        icon = '💭';
+    }
+    return {
+        name: name,
+        description: name,
+        category: category,
+        icon: icon
+    };
 }
 
 async function loadSettings() {
     try {
         const content = await L.resolveDefault(fs.read('/opt/clash/settings'), '');
-        const settings = { mode: 'exclude', autoDetectLan: true, autoDetectWan: true, blockQuic: true };
+        const settings = {
+            mode: 'exclude',
+            autoDetectLan: true,
+            autoDetectWan: true,
+            blockQuic: true,
+            detectedLan: '',
+            detectedWan: '',
+            includedInterfaces: [],
+            excludedInterfaces: []
+        };
 
         content.split('\n').forEach(line => {
             const [key, value] = line.split('=');
@@ -70,21 +166,45 @@ async function loadSettings() {
                     case 'AUTO_DETECT_LAN': settings.autoDetectLan = value.trim() === 'true'; break;
                     case 'AUTO_DETECT_WAN': settings.autoDetectWan = value.trim() === 'true'; break;
                     case 'BLOCK_QUIC': settings.blockQuic = value.trim() === 'true'; break;
+                    case 'DETECTED_LAN': settings.detectedLan = value.trim(); break;
+                    case 'DETECTED_WAN': settings.detectedWan = value.trim(); break;
+                    case 'INCLUDED_INTERFACES':
+                        settings.includedInterfaces = value.trim() ? value.trim().split(',').map(i => i.trim()) : [];
+                        break;
+                    case 'EXCLUDED_INTERFACES':
+                        settings.excludedInterfaces = value.trim() ? value.trim().split(',').map(i => i.trim()) : [];
+                        break;
                 }
             }
         });
 
         return settings;
     } catch (e) {
-        return { mode: 'exclude', autoDetectLan: true, autoDetectWan: true, blockQuic: true };
+        return {
+            mode: 'exclude',
+            autoDetectLan: true,
+            autoDetectWan: true,
+            blockQuic: true,
+            detectedLan: '',
+            detectedWan: '',
+            includedInterfaces: [],
+            excludedInterfaces: []
+        };
     }
 }
 
 async function loadInterfacesByMode(mode) {
-    const filename = mode === 'explicit' ? '/opt/clash/included_interfaces' : '/opt/clash/excluded_interfaces';
     try {
-        const content = await L.resolveDefault(fs.read(filename), '');
-        return content.split('\n').filter(line => line.trim()).map(line => line.trim());
+        const settings = await loadSettings();
+        const manualList = mode === 'explicit' ? settings.includedInterfaces : settings.excludedInterfaces;
+        const detectedInterface = mode === 'explicit' ? settings.detectedLan : settings.detectedWan;
+
+        const allInterfaces = [...manualList];
+        if (detectedInterface && !allInterfaces.includes(detectedInterface)) {
+            allInterfaces.push(detectedInterface);
+        }
+
+        return allInterfaces;
     } catch (e) {
         return [];
     }
@@ -92,15 +212,39 @@ async function loadInterfacesByMode(mode) {
 
 async function saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, interfaces) {
     try {
-        const settingsContent = `INTERFACE_MODE=${mode}\nAUTO_DETECT_LAN=${autoDetectLan}\nAUTO_DETECT_WAN=${autoDetectWan}\nBLOCK_QUIC=${blockQuic}\n`;
+        let detectedLan = '';
+        let detectedWan = '';
+
+        if (autoDetectLan) {
+            detectedLan = await detectLanBridge() || '';
+        }
+
+        if (autoDetectWan) {
+            detectedWan = await detectWanInterface() || '';
+        }
+
+        let cleanInterfaces = interfaces.slice();
+
+        if (mode === 'explicit' && autoDetectLan && detectedLan) {
+            cleanInterfaces = cleanInterfaces.filter(iface => iface !== detectedLan);
+        } else if (mode === 'exclude' && autoDetectWan && detectedWan) {
+            cleanInterfaces = cleanInterfaces.filter(iface => iface !== detectedWan);
+        }
+
+        const includedInterfaces = mode === 'explicit' ? cleanInterfaces : [];
+        const excludedInterfaces = mode === 'exclude' ? cleanInterfaces : [];
+
+        const settingsContent = `INTERFACE_MODE=${mode}
+AUTO_DETECT_LAN=${autoDetectLan}
+AUTO_DETECT_WAN=${autoDetectWan}
+BLOCK_QUIC=${blockQuic}
+DETECTED_LAN=${detectedLan}
+DETECTED_WAN=${detectedWan}
+INCLUDED_INTERFACES=${includedInterfaces.join(',')}
+EXCLUDED_INTERFACES=${excludedInterfaces.join(',')}
+`;
+
         await fs.write('/opt/clash/settings', settingsContent);
-
-        const filename = mode === 'explicit' ? '/opt/clash/included_interfaces' : '/opt/clash/excluded_interfaces';
-        const interfacesContent = interfaces.join('\n') + (interfaces.length > 0 ? '\n' : '');
-        await fs.write(filename, interfacesContent);
-
-        const oppositeFilename = mode === 'explicit' ? '/opt/clash/excluded_interfaces' : '/opt/clash/included_interfaces';
-        await fs.write(oppositeFilename, '');
 
         ui.addNotification(null, E('p', _('Settings saved. Please restart the Clash service for changes to take effect.')), 'info');
         return true;
@@ -109,47 +253,72 @@ async function saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, inter
         return false;
     }
 }
-
 async function detectLanBridge() {
     try {
-        const interfaces = await network.getDevices();
-        for (const iface of interfaces) {
-            const name = iface.getName();
-            if (name && name.match(/^br-/) && iface.isUp()) {
-                const addrs = iface.getIPAddrs();
-                for (const addr of addrs) {
-                    const ip = addr.split('/')[0];
-                    if (ip.match(/^192\.168\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\./)) {
-                        return name;
+        try {
+            const networks = await network.getNetworks();
+            for (const net of networks) {
+                if (net.getName() === 'lan') {
+                    const device = net.getL3Device();
+                    if (device && device.getName() && device.isUp()) {
+                        return device.getName();
                     }
                 }
             }
+        } catch (e) {
+            console.warn('UCI network detection failed, using fallback:', e.message);
         }
+
+        try {
+            const ipResult = await fs.exec('ip', ['addr', 'show']);
+            if (ipResult.code === 0 && ipResult.stdout) {
+                const lines = ipResult.stdout.split('\n');
+                let currentInterface = '';
+
+                for (const line of lines) {
+                    const ifaceMatch = line.match(/^\d+:\s+([^:@]+):/);
+                    if (ifaceMatch) {
+                        currentInterface = ifaceMatch[1];
+                        continue;
+                    }
+
+                    const ipMatch = line.match(/inet\s+(\d+\.\d+\.\d+\.\d+)/);
+                    if (ipMatch && currentInterface && currentInterface !== 'lo') {
+                        const ip = ipMatch[1];
+                        if (ip.match(/^192\.168\.|^10\.|^172\.(1[6-9]|2[0-9]|3[01])\./)) {
+                            if (currentInterface.match(/^(br-|bridge)/) ||
+                                currentInterface === 'lan') {
+                                return currentInterface;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Failed to detect LAN bridge via ip command:', e);
+        }
+
         return null;
     } catch (e) {
-        console.error('Failed to detect LAN bridge:', e);
+        console.error(_('Failed to detect LAN bridge:'), e);
         return null;
     }
 }
 
 async function detectWanInterface() {
     try {
-        const networks = await network.getNetworks();
-        for (const net of networks) {
-            if (net.getName() === 'wan' || net.getName() === 'wan6') {
-                const device = net.getL3Device();
-                if (device && device.getName()) {
-                    return device.getName();
+        try {
+            const networks = await network.getNetworks();
+            for (const net of networks) {
+                if (net.getName() === 'wan' || net.getName() === 'wan6') {
+                    const device = net.getL3Device();
+                    if (device && device.getName()) {
+                        return device.getName();
+                    }
                 }
             }
-        }
-
-        const devices = await network.getDevices();
-        for (const device of devices) {
-            const name = device.getName();
-            if (name && name.match(/^(wan|eth0|ppp|3g|4g|lte)/) && device.isUp()) {
-                return name;
-            }
+        } catch (e) {
+            console.warn('UCI WAN detection failed, using fallback:', e.message);
         }
 
         try {
@@ -162,11 +331,12 @@ async function detectWanInterface() {
                 }
             }
         } catch (e) {
-            console.error('Failed to read route table:', e);
+            console.error(_('Failed to read route table:'), e);
         }
+
         return null;
     } catch (e) {
-        console.error('Failed to detect WAN interface:', e);
+        console.error(_('Failed to detect WAN interface:'), e);
         return null;
     }
 }
@@ -210,7 +380,7 @@ async function detectSystemArchitecture() {
 
         return archMap[arch] || 'amd64';
     } catch (e) {
-        console.error('Failed to detect architecture:', e);
+        console.error(_('Failed to detect architecture:'), e);
         return 'amd64';
     }
 }
@@ -219,19 +389,18 @@ async function getLatestMihomoRelease() {
     try {
         const response = await fetch('https://api.github.com/repos/MetaCubeX/mihomo/releases/latest');
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(_('HTTP %d: %s').format(response.status, response.statusText));
         }
         const data = await response.json();
         if (data.prerelease) {
-            throw new Error('Latest release is a pre-release');
+            throw new Error(_('Latest release is a pre-release'));
         }
         return { version: data.tag_name, assets: data.assets };
     } catch (e) {
-        console.error('Failed to get latest release:', e);
+        console.error(_('Failed to get latest release:'), e);
         return null;
     }
 }
-
 function normalizeVersion(str) {
     if (!str) return '';
     const match = str.match(/v?(\d+\.\d+\.\d+)/);
@@ -274,30 +443,30 @@ async function getMihomoStatus() {
                     if (firstLine.length < 100) {
                         return { installed: true, version: firstLine };
                     }
-                    return { installed: true, version: 'Mihomo (version detected)' };
+                    return { installed: true, version: _('Mihomo (version detected)') };
                 }
             }
         } catch (execError) {}
 
         const size = Math.round(stat.size / 1024 / 1024);
-        return { installed: true, version: `Installed (${size}MB)` };
+        return { installed: true, version: _('Installed (%dMB)').format(size) };
     } catch (e) {
         return { installed: false, version: null };
     }
 }
 
-async function downloadMihomoCore(downloadUrl, version, arch) {
+async function downloadMihomoKernel(downloadUrl, version, arch) {
     try {
-        ui.addNotification(null, E('p', _('Downloading mihomo core...')), 'info');
+        ui.addNotification(null, E('p', _('Downloading mihomo kernel...')), 'info');
 
         const fileName = `mihomo-linux-${arch}-${version}.gz`;
         const downloadPath = `/tmp/${fileName}`;
 
         const curlResult = await fs.exec('curl', ['-L', downloadUrl, '-o', downloadPath]);
-        if (curlResult.code !== 0) throw new Error('Download failed');
+        if (curlResult.code !== 0) throw new Error(_('Download failed'));
 
         const extractResult = await fs.exec('gzip', ['-d', downloadPath]);
-        if (extractResult.code !== 0) throw new Error('Extraction failed');
+        if (extractResult.code !== 0) throw new Error(_('Extraction failed'));
 
         const extractedFile = downloadPath.replace('.gz', '');
         const targetFile = '/opt/clash/bin/clash';
@@ -305,33 +474,37 @@ async function downloadMihomoCore(downloadUrl, version, arch) {
         await fs.exec('mv', [extractedFile, targetFile]);
         await fs.exec('chmod', ['+x', targetFile]);
 
-        ui.addNotification(null, E('p', _('Mihomo core downloaded and installed successfully!')), 'info');
+        ui.addNotification(null, E('p', _('Mihomo kernel downloaded and installed successfully!')), 'info');
         return true;
     } catch (e) {
-        ui.addNotification(null, E('p', _('Failed to download mihomo core: %s').format(e.message)), 'error');
+        ui.addNotification(null, E('p', _('Failed to download mihomo kernel: %s').format(e.message)), 'error');
         return false;
     }
 }
 
-let updateCoreStatusFn = null;
+let updateKernelStatusFn = null;
 
-function createCoreDownloadSection() {
+function createKernelDownloadSection() {
     const container = E('div', { 'class': 'cbi-section' });
 
-    container.appendChild(E('h2', _('Mihomo Core Management')));
+    container.appendChild(E('h2', _('Mihomo Kernel Management')));
     container.appendChild(E('div', { 'class': 'cbi-section-descr' },
-        _('Download and manage the Mihomo (Clash Meta) core binary.')));
+        _('Download and manage the Mihomo (Clash Meta) kernel binary.')));
 
     const statusContainer = E('div', {
-        'id': 'core-status',
+        'id': 'kernel-status',
         'style': 'margin: 15px 0; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;'
     });
 
     container.appendChild(statusContainer);
 
-    async function updateCoreStatus() {
-        const statusElement = document.getElementById('core-status');
-        const downloadButton = document.getElementById('download-core-btn');
+    async function updateKernelStatus() {
+        const statusElement = document.getElementById('kernel-status');
+        const downloadButton = document.getElementById('download-kernel-btn');
+        if (downloadButton) {
+            downloadButton.disabled = true;
+            downloadButton.textContent = _('Checking...');
+        }
 
         try {
             const [status, arch, release] = await Promise.all([
@@ -341,18 +514,19 @@ function createCoreDownloadSection() {
             ]);
 
             let statusHTML = '';
-
             if (status.installed) {
-                statusHTML += `<div style="color: #28a745; font-weight: bold;">✅ ${_('Core Status')}: ${_('Installed')}</div>`;
+                statusHTML += `<div style="color: #28a745; font-weight: bold;">✅ ${_('Kernel Status')}: ${_('Installed')}</div>`;
                 statusHTML += `<div style="margin-top: 5px;">📦 ${_('Version')}: ${status.version}</div>`;
             } else {
-                statusHTML += `<div style="color: #dc3545; font-weight: bold;">❌ ${_('Core Status')}: ${_('Not Installed')}</div>`;
-                statusHTML += `<div style="margin-top: 5px; color: #666;">${_('Mihomo core binary not found')}</div>`;
+                statusHTML += `<div style="color: #dc3545; font-weight: bold;">❌ ${_('Kernel Status')}: ${_('Not Installed')}</div>`;
+                statusHTML += `<div style="margin-top: 5px; color: #666;">${_('Mihomo kernel binary not found')}</div>`;
             }
 
             statusHTML += `<div style="margin-top: 5px;">🏗️ ${_('System Architecture')}: ${arch}</div>`;
 
             if (release) {
+                if (downloadButton) downloadButton.disabled = false;
+
                 statusHTML += `<div style="margin-top: 5px;">🚀 ${_('Latest Available')}: ${release.version}</div>`;
 
                 const localVer = normalizeVersion(status.version);
@@ -362,25 +536,36 @@ function createCoreDownloadSection() {
                     statusHTML += `<div style="margin-top: 5px; color: #ffc107; font-weight: bold;">⚠️ ${_('Update Available')}</div>`;
                     if (downloadButton) downloadButton.textContent = _('Download Update');
                 } else if (status.installed) {
-                    statusHTML += `<div style="margin-top: 5px; color: #28a745;">✨ ${_('Core is up to date')}</div>`;
-                    if (downloadButton) downloadButton.textContent = _('Reinstall Core');
+                    statusHTML += `<div style="margin-top: 5px; color: #28a745;">✨ ${_('Kernel is up to date')}</div>`;
+                    if (downloadButton) downloadButton.textContent = _('Reinstall Kernel');
                 } else {
-                    if (downloadButton) downloadButton.textContent = _('Download Latest Core');
+                    if (downloadButton) downloadButton.textContent = _('Download Latest Kernel');
                 }
             } else {
                 statusHTML += `<div style="margin-top: 5px; color: #dc3545;">❌ ${_('Failed to check latest version')}</div>`;
-                if (downloadButton) downloadButton.disabled = true;
+                if (downloadButton) {
+                    downloadButton.disabled = true;
+                    if (status.installed) {
+                        downloadButton.textContent = _('Reinstall Kernel');
+                    } else {
+                        downloadButton.textContent = _('Download Latest Kernel');
+                    }
+                }
             }
 
             statusElement.innerHTML = statusHTML;
         } catch (e) {
             statusElement.innerHTML = `<div style="color: #dc3545;">❌ ${_('Error checking status')}: ${e.message}</div>`;
-            console.error('Failed to update core status:', e);
+            if (downloadButton) {
+                downloadButton.disabled = true;
+                downloadButton.textContent = _('Download Latest Kernel');
+            }
+            console.error(_('Failed to update kernel status:'), e);
         }
     }
 
-    updateCoreStatusFn = updateCoreStatus;
-    setTimeout(updateCoreStatus, 100);
+    updateKernelStatusFn = updateKernelStatus;
+    setTimeout(updateKernelStatus, 100);
 
     return container;
 }
@@ -490,7 +675,7 @@ function createAutoDetectOptions(currentMode, autoDetectLan, autoDetectWan) {
         'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; cursor: pointer;'
     }, [
         autoDetectLanCheckbox,
-        E('span', _('🔍 Automatically detect LAN bridge interface'))
+        E('span', '🔍 ' + _('Automatically detect LAN bridge interface'))
     ]);
 
     lanContainer.appendChild(autoDetectLanLabel);
@@ -512,7 +697,7 @@ function createAutoDetectOptions(currentMode, autoDetectLan, autoDetectWan) {
         'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; cursor: pointer;'
     }, [
         autoDetectWanCheckbox,
-        E('span', _('🔍 Automatically detect WAN interface'))
+        E('span', '🔍 ' + _('Automatically detect WAN interface'))
     ]);
 
     wanContainer.appendChild(autoDetectWanLabel);
@@ -527,6 +712,40 @@ function createAutoDetectOptions(currentMode, autoDetectLan, autoDetectWan) {
         autoDetectLanCheckbox.checked = autoDetectLan;
         autoDetectWanCheckbox.checked = autoDetectWan;
     }, 0);
+
+    async function handleAutoDetectChange(isChecked, type) {
+        if (isChecked) return;
+
+        try {
+            const settings = await loadSettings();
+            const detectedInterfaceName = (type === 'lan') ? settings.detectedLan : settings.detectedWan;
+
+            if (detectedInterfaceName) {
+                const checkbox = document.getElementById('iface_' + detectedInterfaceName);
+                if (checkbox && checkbox.checked) {
+                    checkbox.checked = false;
+                    const label = checkbox.nextElementSibling;
+                    label.style.borderColor = '#ccc';
+                    label.style.backgroundColor = 'white';
+
+                    const autoIndicator = label.querySelector('.auto-indicator');
+                    if (autoIndicator) {
+                        autoIndicator.remove();
+                    }
+                }
+            }
+        } catch (e) {
+            console.error(`Failed to uncheck detected ${type} interface:`, e);
+        }
+    }
+
+    autoDetectLanCheckbox.addEventListener('change', function() {
+        handleAutoDetectChange(this.checked, 'lan');
+    });
+
+    autoDetectWanCheckbox.addEventListener('change', function() {
+        handleAutoDetectChange(this.checked, 'wan');
+    });
 
     return container;
 }
@@ -568,80 +787,97 @@ function createInterfaceSelector(interfaces, selectedInterfaces, currentMode) {
 
     const mainContainer = E('div', { 'style': 'margin: 15px 0;' });
 
-    Object.keys(groupedInterfaces).forEach(function(category) {
-        if (groupedInterfaces[category].length === 0) return;
+    function updateLabelStyle(checkbox, label, ifaceName, detectedInterface) {
+        const isAutoDetected = ifaceName === detectedInterface;
+        if (isAutoDetected) {
+            label.style.borderColor = '#28a745';
+            label.style.backgroundColor = '#f8fff8';
+        } else if (checkbox.checked) {
+            label.style.borderColor = '#0066cc';
+            label.style.backgroundColor = '#e6f3ff';
+        } else {
+            label.style.borderColor = '#ccc';
+            label.style.backgroundColor = 'white';
+        }
+    }
 
-        const groupContainer = E('div', {
-            'class': 'cbi-section',
-            'style': 'margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px; padding: 0 8px 8px 8px; background-color: #f9f9f9;'
-        });
+    loadSettings().then(function(settings) {
+        const autoDetectEnabled = currentMode === 'explicit' ? settings.autoDetectLan : settings.autoDetectWan;
+        const detectedInterface = autoDetectEnabled
+            ? (currentMode === 'explicit' ? settings.detectedLan : settings.detectedWan)
+            : null;
 
-        const groupTitle = E('h4', {
-            'style': 'color: #555; font-size: 13px;'
-        }, categoryNames[category] || category);
+        Object.keys(groupedInterfaces).forEach(function(category) {
+            if (groupedInterfaces[category].length === 0) return;
 
-        groupContainer.appendChild(groupTitle);
-
-        const interfaceGrid = E('div', {
-            'style': 'display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px;'
-        });
-
-        groupedInterfaces[category].forEach(function(iface) {
-            const isChecked = selectedInterfaces.includes(iface.name);
-
-            const checkbox = E('input', {
-                'type': 'checkbox',
-                'id': 'iface_' + iface.name,
-                'value': iface.name,
-                'style': 'position: absolute; left: 6px; top: 50%; transform: translateY(-50%); z-index: 2; margin: 0; vertical-align: middle;'
+            const groupContainer = E('div', {
+                'class': 'cbi-section',
+                'style': 'margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px; padding: 0 8px 8px 8px; background-color: #f9f9f9;'
             });
 
-            setTimeout(() => {
+            const groupTitle = E('h4', {
+                'style': 'color: #555; font-size: 13px;'
+            }, categoryNames[category] || category);
+
+            groupContainer.appendChild(groupTitle);
+
+            const interfaceGrid = E('div', {
+                'style': 'display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px;'
+            });
+            groupedInterfaces[category].forEach(function(iface) {
+                const isChecked = selectedInterfaces.includes(iface.name);
+
+                const checkbox = E('input', {
+                    'type': 'checkbox',
+                    'id': 'iface_' + iface.name,
+                    'value': iface.name,
+                    'style': 'position: absolute; left: 6px; top: 50%; transform: translateY(-50%); z-index: 2; margin: 0; vertical-align: middle;'
+                });
+
+                const label = E('label', {
+                    'for': 'iface_' + iface.name,
+                    'style': 'display: flex; align-items: center; padding: 6px 6px 6px 24px; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; background-color: white; transition: all 0.15s ease; font-size: 13px; min-height: 32px; position: relative; line-height: 1.2;'
+                }, [
+                    E('span', { 'style': 'margin-right: 6px; font-size: 14px; flex-shrink: 0;' }, iface.icon),
+                    E('span', { 'style': 'font-weight: 500; flex-grow: 1;' }, iface.description)
+                ]);
+
+                const wrapper = E('div', { 'style': 'position: relative;' }, [checkbox, label]);
+
                 checkbox.checked = isChecked;
-                updateLabelStyle();
-            }, 0);
+                updateLabelStyle(checkbox, label, iface.name, detectedInterface);
 
-            const label = E('label', {
-                'for': 'iface_' + iface.name,
-                'style': 'display: flex; align-items: center; padding: 6px 6px 6px 24px; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; background-color: white; transition: all 0.15s ease; font-size: 13px; min-height: 32px; position: relative; line-height: 1.2;'
-            }, [
-                E('span', { 'style': 'margin-right: 6px; font-size: 14px; flex-shrink: 0;' }, iface.icon),
-                E('span', { 'style': 'font-weight: 500; flex-grow: 1;' }, iface.description)
-            ]);
-
-            const wrapper = E('div', { 'style': 'position: relative;' }, [
-                checkbox,
-                label
-            ]);
-
-            function updateLabelStyle() {
-                if (checkbox.checked) {
-                    label.style.borderColor = '#0066cc';
-                    label.style.backgroundColor = '#e6f3ff';
-                } else {
-                    label.style.borderColor = '#ccc';
-                    label.style.backgroundColor = 'white';
+                if (iface.name === detectedInterface) {
+                    const autoIndicator = E('span', {
+                        'class': 'auto-indicator',
+                        'style': 'margin-left: 4px; font-size: 10px; color: #28a745; font-weight: bold;'
+                    }, '● ' + _('AUTO'));
+                    label.appendChild(autoIndicator);
                 }
-            }
 
-            label.addEventListener('mouseover', function() {
-                if (!checkbox.checked) {
-                    this.style.borderColor = '#0066cc';
-                    this.style.backgroundColor = '#f0f8ff';
-                }
+                checkbox.addEventListener('change', function() {
+                    updateLabelStyle(this, label, iface.name, detectedInterface);
+                });
+
+                label.addEventListener('mouseover', function() {
+                    if (iface.name === detectedInterface) {
+                        this.style.backgroundColor = '#f0fff0';
+                    } else if (!checkbox.checked) {
+                        this.style.borderColor = '#0066cc';
+                        this.style.backgroundColor = '#f0f8ff';
+                    }
+                });
+
+                label.addEventListener('mouseout', function() {
+                    updateLabelStyle(checkbox, label, iface.name, detectedInterface);
+                });
+
+                interfaceGrid.appendChild(wrapper);
             });
 
-            label.addEventListener('mouseout', function() {
-                updateLabelStyle();
-            });
-
-            checkbox.addEventListener('change', updateLabelStyle);
-
-            interfaceGrid.appendChild(wrapper);
+            groupContainer.appendChild(interfaceGrid);
+            mainContainer.appendChild(groupContainer);
         });
-
-        groupContainer.appendChild(interfaceGrid);
-        mainContainer.appendChild(groupContainer);
     });
 
     container.appendChild(mainContainer);
@@ -665,7 +901,7 @@ function createAdditionalSettings(blockQuic) {
         'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; cursor: pointer;'
     }, [
         blockQuicCheckbox,
-        E('span', _('🚫 Block QUIC traffic (UDP port 443)'))
+        E('span', '🚫 ' + _('Block QUIC traffic (UDP port 443)'))
     ]);
 
     settingsContainer.appendChild(blockQuicLabel);
@@ -682,14 +918,23 @@ function createAdditionalSettings(blockQuic) {
 
 async function updateInterfaceCheckboxes(newMode) {
     try {
-        const selectedInterfaces = await loadInterfacesByMode(newMode);
+        const settings = await loadSettings();
+        const detectedInterface = newMode === 'explicit' ? settings.detectedLan : settings.detectedWan;
+        const autoDetectEnabled = newMode === 'explicit' ? settings.autoDetectLan : settings.autoDetectWan;
 
+        const selectedInterfaces = await loadInterfacesByMode(newMode);
         const checkboxes = document.querySelectorAll('#interface-selector input[type="checkbox"]');
+
         checkboxes.forEach(function(cb) {
             cb.checked = false;
             const label = cb.nextElementSibling;
             label.style.borderColor = '#ccc';
             label.style.backgroundColor = 'white';
+
+            const autoIndicator = label.querySelector('.auto-indicator');
+            if (autoIndicator) {
+                autoIndicator.remove();
+            }
         });
 
         selectedInterfaces.forEach(function(ifaceName) {
@@ -697,14 +942,26 @@ async function updateInterfaceCheckboxes(newMode) {
             if (checkbox) {
                 checkbox.checked = true;
                 const label = checkbox.nextElementSibling;
-                label.style.borderColor = '#0066cc';
-                label.style.backgroundColor = '#e6f3ff';
+
+                if (autoDetectEnabled && ifaceName === detectedInterface) {
+                    label.style.borderColor = '#28a745';
+                    label.style.backgroundColor = '#f8fff8';
+
+                    const autoIndicator = E('span', {
+                        'class': 'auto-indicator',
+                        'style': 'margin-left: 4px; font-size: 10px; color: #28a745; font-weight: bold;'
+                    }, '● ' + _('AUTO'));
+                    label.appendChild(autoIndicator);
+                } else {
+                    label.style.borderColor = '#0066cc';
+                    label.style.backgroundColor = '#e6f3ff';
+                }
             }
         });
 
         return selectedInterfaces;
     } catch (e) {
-        console.error('Failed to update interface checkboxes:', e);
+        console.error(_('Failed to update interface checkboxes:'), e);
         return [];
     }
 }
@@ -723,7 +980,7 @@ async function updateAutoDetectSettings(newMode) {
 
         return settings;
     } catch (e) {
-        console.error('Failed to update auto detect settings:', e);
+        console.error(_('Failed to update auto detect settings:'), e);
         return { autoDetectLan: true, autoDetectWan: true, blockQuic: true };
     }
 }
@@ -752,17 +1009,17 @@ return view.extend({
             detectedLanBridge = await detectLanBridge();
             detectedWanInterface = await detectWanInterface();
         } catch (e) {
-            console.error('Failed to detect interfaces:', e);
+            console.error(_('Failed to detect interfaces:'), e);
         }
 
         const modeSelector = createModeSelector(settings.mode);
         const autoDetectOptions = createAutoDetectOptions(settings.mode, settings.autoDetectLan, settings.autoDetectWan);
         const interfaceSelector = createInterfaceSelector(interfaces, selectedInterfaces, settings.mode);
         const additionalSettings = createAdditionalSettings(settings.blockQuic);
-        const coreDownloadSection = createCoreDownloadSection();
+        const kernelDownloadSection = createKernelDownloadSection();
 
         const downloadButton = E('button', {
-            'id': 'download-core-btn',
+            'id': 'download-kernel-btn',
             'class': 'btn',
             'click': async function() {
                 this.disabled = true;
@@ -772,61 +1029,60 @@ return view.extend({
                     const arch = await detectSystemArchitecture();
                     const release = await getLatestMihomoRelease();
 
-                    if (!release) throw new Error('Failed to get release information');
+                    if (!release) throw new Error(_('Failed to get release information'));
 
                     const assetName = `mihomo-linux-${arch}-${release.version}.gz`;
                     const asset = release.assets.find(a => a.name === assetName);
 
-                    if (!asset) throw new Error(`No binary found for architecture: ${arch}`);
+                    if (!asset) throw new Error(_('No binary found for architecture: %s').format(arch));
 
-                    const success = await downloadMihomoCore(asset.browser_download_url, release.version, arch);
+                    const success = await downloadMihomoKernel(asset.browser_download_url, release.version, arch);
 
-                    if (success && updateCoreStatusFn) {
-                        updateCoreStatusFn();
+                    if (success && updateKernelStatusFn) {
+                        updateKernelStatusFn();
                     }
                 } catch (e) {
                     ui.addNotification(null, E('p', _('Download failed: %s').format(e.message)), 'error');
                 } finally {
                     this.disabled = false;
-                    this.textContent = _('Download Latest Core');
+                    this.textContent = _('Download Latest Kernel');
                 }
             }
-        }, _('Download Latest Core'));
+        }, _('Download Latest Kernel'));
 
         const refreshButton = E('button', {
             'class': 'btn',
             'style': 'margin-left: 10px;',
             'click': function() {
-                if (updateCoreStatusFn) {
-                    updateCoreStatusFn();
+                if (updateKernelStatusFn) {
+                    updateKernelStatusFn();
                 }
             }
         }, _('Refresh Status'));
 
-        const restartCoreButton = E('button', {
+        const restartKernelButton = E('button', {
             'class': 'btn',
             'style': 'margin-left: 10px;',
             'click': async function() {
                 try {
                     await fs.exec('/etc/init.d/clash', ['restart']);
                     ui.addNotification(null, E('p', _('Clash service restarted successfully.')), 'info');
-                    if (updateCoreStatusFn) {
-                        updateCoreStatusFn();
+                    if (updateKernelStatusFn) {
+                        updateKernelStatusFn();
                     }
                 } catch (e) {
                     ui.addNotification(null, E('p', _('Failed to restart Clash service: %s').format(e.message)), 'error');
                 }
             }
         }, _('Restart Service'));
-
-        const coreButtonContainer = E('div', { 'style': 'margin: 20px 0; text-align: center;' }, [
-            downloadButton, refreshButton, restartCoreButton
+        const kernelButtonContainer = E('div', { 'style': 'margin: 20px 0; text-align: center;' }, [
+            downloadButton, refreshButton, restartKernelButton
         ]);
 
-        const coreInfoSection = E('div', {
+        const kernelInfoSection = E('div', {
             'style': 'margin: 10px 0 20px 0; padding: 8px 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; font-size: 12px;'
         }, [
-            E('span', { 'style': 'color: #856404; font-weight: bold;' }, _('⚠️ Restart Clash service after installing or updating the core'))
+            E('span', { 'style': 'color: #856404; font-weight: bold;' }, '⚠️ ' + _('Restart Clash service after installing or updating the kernel'))
         ]);
 
         const modeRadios = modeSelector.querySelectorAll('input[name="interface_mode"]');
@@ -903,7 +1159,6 @@ return view.extend({
                 try {
                     await fs.exec('/etc/init.d/clash', ['reload']);
                     ui.addNotification(null, E('p', _('Clash service restarted successfully.')), 'info');
-
                     const currentMode = modeSelector.querySelector('input[name="interface_mode"]:checked').value;
                     const currentAutoDetectLan = autoDetectOptions.querySelector('#auto_detect_lan').checked;
                     const currentAutoDetectWan = autoDetectOptions.querySelector('#auto_detect_wan').checked;
@@ -923,11 +1178,54 @@ return view.extend({
                         }
                     });
 
+                    const autoDetectEnabled = currentMode === 'explicit' ? currentAutoDetectLan : currentAutoDetectWan;
+
+                    try {
+                        const settings = await loadSettings();
+                        const detectedInterface = currentMode === 'explicit' ? settings.detectedLan : settings.detectedWan;
+
+                        if (detectedInterface && autoDetectEnabled) {
+                            const detectedCheckbox = document.getElementById('iface_' + detectedInterface);
+                            if (detectedCheckbox) {
+                                const detectedLabel = detectedCheckbox.nextElementSibling;
+                                detectedLabel.style.borderColor = '#28a745';
+                                detectedLabel.style.backgroundColor = '#f8fff8';
+
+                                const existingIndicator = detectedLabel.querySelector('.auto-indicator');
+                                if (!existingIndicator) {
+                                    const autoIndicator = E('span', {
+                                        'class': 'auto-indicator',
+                                        'style': 'margin-left: 4px; font-size: 10px; color: #28a745; font-weight: bold;'
+                                    }, '● ' + _('AUTO'));
+                                    detectedLabel.appendChild(autoIndicator);
+                                }
+                            }
+                        } else if (detectedInterface && !autoDetectEnabled) {
+                            const detectedCheckbox = document.getElementById('iface_' + detectedInterface);
+                            if (detectedCheckbox) {
+                                const detectedLabel = detectedCheckbox.nextElementSibling;
+                                const existingIndicator = detectedLabel.querySelector('.auto-indicator');
+                                if (existingIndicator) {
+                                    existingIndicator.remove();
+                                }
+                                if (detectedCheckbox.checked) {
+                                    detectedLabel.style.borderColor = '#0066cc';
+                                    detectedLabel.style.backgroundColor = '#e6f3ff';
+                                } else {
+                                    detectedLabel.style.borderColor = '#ccc';
+                                    detectedLabel.style.backgroundColor = 'white';
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to reapply auto-detected styles:', e);
+                    }
+
                     try {
                         detectedLanBridge = await detectLanBridge();
                         detectedWanInterface = await detectWanInterface();
                     } catch (e) {
-                        console.error('Failed to re-detect interfaces:', e);
+                        console.error(_('Failed to re-detect interfaces:'), e);
                     }
 
                     updateCurrentStatus(currentMode, currentAutoDetectLan, currentAutoDetectWan, savedInterfaces, detectedLanBridge, detectedWanInterface);
@@ -953,10 +1251,10 @@ return view.extend({
                     statusLines.push(_('Mode: Explicit (process only selected)'));
 
                     if (autoDetectLan && detectedLan) {
-                        statusLines.push(_('Auto-detected LAN: %s').format(detectedLan));
+                        statusLines.push(_('Auto-detected LAN: %s ✓').format(detectedLan));
                     }
 
-                    const manualOnly = getManualInterfaces(manualInterfaces, autoDetectLan ? detectedLan : null);
+                    const manualOnly = manualInterfaces.filter(iface => iface !== detectedLan);
                     if (manualOnly.length > 0) {
                         statusLines.push(_('Manual selection: %s').format(manualOnly.join(', ')));
                     }
@@ -968,14 +1266,13 @@ return view.extend({
                     statusLines.push(_('Mode: Exclude (process all except selected)'));
 
                     if (autoDetectWan && detectedWan) {
-                        statusLines.push(_('Auto-detected WAN: %s').format(detectedWan));
+                        statusLines.push(_('Auto-detected WAN: %s ✓').format(detectedWan));
                     }
 
-                    const manualOnly = getManualInterfaces(manualInterfaces, autoDetectWan ? detectedWan : null);
+                    const manualOnly = manualInterfaces.filter(iface => iface !== detectedWan);
                     if (manualOnly.length > 0) {
                         statusLines.push(_('Manual exclusions: %s').format(manualOnly.join(', ')));
                     }
-
                     if (!autoDetectWan && manualInterfaces.length === 0) {
                         statusLines.push(_('No exclusions configured'));
                     }
@@ -994,12 +1291,12 @@ return view.extend({
                 let infoText = '';
                 if (mode === 'explicit') {
                     infoText = detectedLan
-                        ? _('💡 Available LAN bridge: %s').format(detectedLan)
-                        : _('💡 No LAN bridge detected');
+                        ? '💡 ' + _('Available LAN bridge: %s').format(detectedLan)
+                        : '💡 ' + _('No LAN bridge detected');
                 } else {
                     infoText = detectedWan
-                        ? _('💡 Available WAN interface: %s').format(detectedWan)
-                        : _('💡 No WAN interface detected');
+                        ? '💡 ' + _('Available WAN interface: %s').format(detectedWan)
+                        : '💡 ' + _('No WAN interface detected');
                 }
                 detectionInfoElement.textContent = infoText;
             }
@@ -1029,7 +1326,7 @@ return view.extend({
                 E('div', {
                     'style': 'padding: 8px 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; font-size: 12px;'
                 }, [
-                    E('span', { 'style': 'color: #856404; font-weight: bold;' }, _('⚠️ Restart Clash service after saving changes'))
+                    E('span', { 'style': 'color: #856404; font-weight: bold;' }, '⚠️ ' + _('Restart Clash service after saving changes'))
                 ])
             ])
         ]);
@@ -1045,9 +1342,9 @@ return view.extend({
             additionalSettings,
             buttonContainer,
             statusSection,
-            coreDownloadSection,
-            coreButtonContainer,
-            coreInfoSection
+            kernelDownloadSection,
+            kernelButtonContainer,
+            kernelInfoSection
         ]);
 
         return view;

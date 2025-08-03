@@ -1,10 +1,10 @@
-# Copyright 2024-2025 ZeroChaos (https://github.com/zerolabnet/ssclash)
+# Copyright 2024-2025 ZeroChaos (https://github.com/zerolabnet/SSClash)
 # This is free software, licensed under the GNU General Public License v2.
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ssclash
-PKG_VERSION:=2.7.1
+PKG_VERSION:=2.8.0
 PKG_RELEASE:=1
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
@@ -12,19 +12,21 @@ LUCI_TITLE:=LuCI Support for SSClash
 LUCI_DEPENDS:=+luci-base
 LUCI_PKGARCH:=all
 
+PKG_BUILD_DEPENDS:=luci-base/host
+
 include $(INCLUDE_DIR)/package.mk
 
 define Package/$(PKG_NAME)
-  SECTION:=luci
-  CATEGORY:=LuCI
-  SUBMENU:=3. Applications
-  TITLE:=$(LUCI_TITLE)
-  DEPENDS:=$(LUCI_DEPENDS)
-  PKGARCH:=$(LUCI_PKGARCH)
+	SECTION:=luci
+	CATEGORY:=LuCI
+	SUBMENU:=3. Applications
+	TITLE:=$(LUCI_TITLE)
+	DEPENDS:=$(LUCI_DEPENDS)
+	PKGARCH:=$(LUCI_PKGARCH)
 endef
 
 define Package/$(PKG_NAME)/description
-  LuCI interface for SSClash, a tool for managing and configuring Clash.
+	LuCI interface for SSClash, a tool for managing and configuring Clash.
 endef
 
 define Build/Prepare
@@ -32,7 +34,12 @@ define Build/Prepare
 endef
 
 define Build/Compile
-	# No compilation steps required
+	@mkdir -p $(PKG_BUILD_DIR)/po/ru
+	@if [ -f "./rootfs/po/ru/ssclash.po" ]; then \
+		$(STAGING_DIR_HOSTPKG)/bin/po2lmo \
+			"./rootfs/po/ru/ssclash.po" \
+			"$(PKG_BUILD_DIR)/po/ru/ssclash.lmo"; \
+	fi
 endef
 
 define Package/$(PKG_NAME)/conffiles
@@ -60,6 +67,14 @@ define Package/$(PKG_NAME)/install
 
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/ssclash
 	$(CP) ./rootfs/www/luci-static/resources/view/ssclash/* $(1)/www/luci-static/resources/view/ssclash/
+
+	$(INSTALL_DIR) $(1)/opt/clash/lst
+
+	@if [ -f "$(PKG_BUILD_DIR)/po/ru/ssclash.lmo" ]; then \
+		$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n; \
+		$(INSTALL_DATA) "$(PKG_BUILD_DIR)/po/ru/ssclash.lmo" \
+			"$(1)/usr/lib/lua/luci/i18n/ssclash.ru.lmo"; \
+	fi
 endef
 
 define Package/$(PKG_NAME)/postrm
@@ -69,6 +84,7 @@ define Package/$(PKG_NAME)/postrm
 	rm -f /opt/clash/ruleset
 	rm -rf /tmp/clash
 	rm -rf /www/luci-static/resources/view/ssclash
+	rm -f /usr/lib/lua/luci/i18n/ssclash.*.lmo
 }
 endef
 

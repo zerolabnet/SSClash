@@ -1,0 +1,456 @@
+# Russian translation for SSClash
+# Copyright (C) 2024-2025 ZeroChaos
+# This file is distributed under the same license as the package.
+#
+msgid ""
+msgstr ""
+"Language: ru\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+### Строки меню ###
+
+msgid "Configuration"
+msgstr "Конфигурация"
+
+msgid "Settings"
+msgstr "Настройки"
+
+msgid "Rulesets"
+msgstr "Списки правил"
+
+msgid "Log"
+msgstr "Журнал"
+
+### Общие строки ###
+
+msgid "Please wait"
+msgstr "Пожалуйста, подождите"
+
+msgid "Saving..."
+msgstr "Сохранение..."
+
+msgid "Deleting..."
+msgstr "Удаление..."
+
+msgid "Creating..."
+msgstr "Создание..."
+
+msgid "Cancel"
+msgstr "Отмена"
+
+msgid "Create"
+msgstr "Создать"
+
+msgid "Save"
+msgstr "Сохранить"
+
+msgid "Delete"
+msgstr "Удалить"
+
+### Модуль config.js ###
+
+msgid "Open Dashboard"
+msgstr "Открыть панель управления"
+
+msgid "Stop Service"
+msgstr "Остановить службу"
+
+msgid "Start Service"
+msgstr "Запустить службу"
+
+msgid "Clash is running"
+msgstr "Clash запущен"
+
+msgid "Clash stopped"
+msgstr "Clash остановлен"
+
+msgid "Clash Configuration"
+msgstr "Конфигурация Clash"
+
+msgid "Your current Clash config. When applied, the changes will be saved and the service will be restarted."
+msgstr "Ваша текущая конфигурация Clash. При применении изменения будут сохранены, а служба перезапущена."
+
+msgid "Save & Apply Configuration"
+msgstr "Сохранить и применить"
+
+msgid "Unable to start and enable service: %s"
+msgstr "Не удалось запустить и включить службу: %s"
+
+msgid "Unable to stop and disable service: %s"
+msgstr "Не удалось остановить и отключить службу: %s"
+
+msgid "Popup was blocked. Please allow popups for this site."
+msgstr "Всплывающее окно заблокировано. Пожалуйста, разрешите всплывающие окна для этого сайта."
+
+msgid "Service is not running."
+msgstr "Служба не запущена."
+
+msgid "Error opening dashboard:"
+msgstr "Ошибка при открытии панели управления:"
+
+msgid "Failed to open dashboard: %s"
+msgstr "Не удалось открыть панель управления: %s"
+
+msgid "Configuration saved successfully."
+msgstr "Конфигурация успешно сохранена."
+
+msgid "Service reloaded successfully."
+msgstr "Служба успешно перезагружена."
+
+msgid "Unable to save contents: %s"
+msgstr "Не удалось сохранить содержимое: %s"
+
+### Модуль log.js ###
+
+msgid "--- Log truncated, skipped %d older lines ---"
+msgstr "--- Лог урезан, пропущено %d старых строк ---"
+
+msgid "Error executing logread:"
+msgstr "Ошибка выполнения logread:"
+
+msgid "Error reading logs: %s"
+msgstr "Ошибка чтения логов: %s"
+
+### Модуль rulesets.js ###
+
+msgid "Local Rulesets"
+msgstr "Локальные списки правил"
+
+msgid "Create New List"
+msgstr "Создать новый список"
+
+msgid "Here you can manage local lists for use in rule-providers. Example usage in your config.yaml: type: file, format: text, path: ./lst/your-list.txt"
+msgstr "Здесь вы можете управлять локальными списками для использования в rule-providers. Пример использования в вашем config.yaml: type: file, format: text, path: ./lst/your-list.txt"
+
+msgid "Editor not initialized."
+msgstr "Редактор не инициализирован."
+
+msgid "List \"%s\" saved successfully."
+msgstr "Список \"%s\" успешно сохранен."
+
+msgid "Failed to save list \"%s\": %s"
+msgstr "Не удалось сохранить список \"%s\": %s"
+
+msgid "Delete Ruleset"
+msgstr "Удалить список правил"
+
+msgid "Are you sure you want to delete the list \"%s\"? This action cannot be undone."
+msgstr "Вы уверены, что хотите удалить список \"%s\"? Это действие необратимо."
+
+msgid "List \"%s\" has been deleted."
+msgstr "Список \"%s\" был удален."
+
+msgid "Failed to delete list \"%s\": %s"
+msgstr "Не удалось удалить список \"%s\": %s"
+
+msgid "Create New Ruleset"
+msgstr "Создать новый список правил"
+
+msgid "e.g., my-custom-list"
+msgstr "например, my-custom-list"
+
+msgid "Invalid name. Only letters, numbers, underscores, and hyphens are allowed."
+msgstr "Некорректное имя. Разрешены только буквы, цифры, знак подчеркивания и дефисы."
+
+msgid "List Name"
+msgstr "Имя списка"
+
+msgid "New list \"%s\" created."
+msgstr "Новый список \"%s\" создан."
+
+msgid "Failed to create list: %s"
+msgstr "Не удалось создать список: %s"
+
+msgid "Cannot read ruleset directory: %s"
+msgstr "Не удается прочитать директорию списков правил: %s"
+
+### Модуль settings.js ###
+
+msgid "WAN Interfaces"
+msgstr "WAN-интерфейсы"
+
+msgid "Ethernet Interfaces"
+msgstr "Ethernet-интерфейсы"
+
+msgid "WiFi Interfaces"
+msgstr "Wi-Fi интерфейсы"
+
+msgid "USB Interfaces"
+msgstr "USB-интерфейсы"
+
+msgid "VPN Interfaces"
+msgstr "VPN-интерфейсы"
+
+msgid "Virtual Interfaces"
+msgstr "Виртуальные интерфейсы"
+
+msgid "Other Interfaces"
+msgstr "Прочие интерфейсы"
+
+msgid "Mihomo Kernel Management"
+msgstr "Управление ядром Mihomo"
+
+msgid "Download and manage the Mihomo (Clash Meta) kernel binary."
+msgstr "Загрузка и управление исполняемым файлом ядра Mihomo (Clash Meta)."
+
+msgid "Interface Processing Mode"
+msgstr "Режим обработки интерфейсов"
+
+msgid "Choose how to handle network interfaces for proxy processing."
+msgstr "Выберите, как обрабатывать сетевые интерфейсы для проксирования."
+
+msgid "Automatic Interface Detection"
+msgstr "Автоматическое определение интерфейсов"
+
+msgid "Additional Settings"
+msgstr "Дополнительные настройки"
+
+msgid "Exclude Mode (Universal approach)"
+msgstr "Режим исключения (универсальный)"
+
+msgid "Process traffic from ALL interfaces except selected ones. Automatically detects and excludes WAN. Recommended for most users."
+msgstr "Обрабатывать трафик со всех интерфейсов, кроме выбранных. Автоматически обнаруживает и исключает WAN. Рекомендуется для большинства пользователей."
+
+msgid "Explicit Mode (Precise control)"
+msgstr "Явный режим (точный контроль)"
+
+msgid "Process traffic ONLY from selected interfaces. More secure but requires manual configuration. Recommended for advanced users."
+msgstr "Обрабатывать трафик только с выбранных интерфейсов. Более безопасно, но требует ручной настройки. Рекомендуется для опытных пользователей."
+
+msgid "Automatically detect LAN bridge interface"
+msgstr "Автоматически определять LAN-мост"
+
+msgid "When enabled, automatically finds the main LAN bridge. Disable to manually select specific interfaces."
+msgstr "Если включено, автоматически находит основной LAN-мост. Отключите для ручного выбора интерфейсов."
+
+msgid "Automatically detect WAN interface"
+msgstr "Автоматически определять WAN-интерфейс"
+
+msgid "When enabled, automatically detects and excludes WAN interface. Disable to manually select interfaces to exclude."
+msgstr "Если включено, автоматически обнаруживает и исключает WAN-интерфейс. Отключите для ручного выбора интерфейсов для исключения."
+
+msgid "Select interfaces to process"
+msgstr "Выберите интерфейсы для обработки"
+
+msgid "Traffic from these interfaces will be processed by the proxy."
+msgstr "Трафик с этих интерфейсов будет обработан прокси."
+
+msgid "Select interfaces to exclude"
+msgstr "Выберите интерфейсы для исключения"
+
+msgid "Traffic from these interfaces will bypass the proxy (direct routing)."
+msgstr "Трафик с этих интерфейсов будет идти в обход прокси (прямая маршрутизация)."
+
+msgid "Block QUIC traffic (UDP port 443)"
+msgstr "Блокировать трафик QUIC (UDP-порт 443)"
+
+msgid "When enabled, blocks QUIC traffic on UDP port 443. This can improve proxy effectiveness for some services like YouTube."
+msgstr "Если включено, блокирует трафик QUIC по порту 443 (UDP). Это может улучшить эффективность прокси для таких сервисов, как YouTube."
+
+msgid "Kernel Status"
+msgstr "Статус ядра"
+
+msgid "Installed"
+msgstr "Установлено"
+
+msgid "Not Installed"
+msgstr "Не установлено"
+
+msgid "Version"
+msgstr "Версия"
+
+msgid "System Architecture"
+msgstr "Архитектура системы"
+
+msgid "Latest Available"
+msgstr "Последняя доступная"
+
+msgid "Update Available"
+msgstr "Доступно обновление"
+
+msgid "Kernel is up to date"
+msgstr "Ядро обновлено до последней версии"
+
+msgid "Mihomo kernel binary not found"
+msgstr "Исполняемый файл ядра Mihomo не найден"
+
+msgid "Failed to check latest version"
+msgstr "Не удалось проверить последнюю версию"
+
+msgid "Error checking status"
+msgstr "Ошибка проверки статуса"
+
+msgid "Mihomo (version detected)"
+msgstr "Mihomo (версия определена)"
+
+msgid "Installed (%dMB)"
+msgstr "Установлено (%d МБ)"
+
+msgid "Download Latest Kernel"
+msgstr "Скачать последнее ядро"
+
+msgid "Download Update"
+msgstr "Скачать обновление"
+
+msgid "Reinstall Kernel"
+msgstr "Переустановить ядро"
+
+msgid "Downloading..."
+msgstr "Загрузка..."
+
+msgid "Checking..."
+msgstr "Проверка..."
+
+msgid "Refresh Status"
+msgstr "Обновить статус"
+
+msgid "Restart Service"
+msgstr "Перезапустить службу"
+
+msgid "Save Settings"
+msgstr "Сохранить настройки"
+
+msgid "Clear All Interfaces"
+msgstr "Очистить выбор"
+
+msgid "Mode: Explicit (process only selected)"
+msgstr "Режим: Явный (обрабатывать только выбранные)"
+
+msgid "Mode: Exclude (process all except selected)"
+msgstr "Режим: Исключения (обрабатывать все, кроме выбранных)"
+
+msgid "Auto-detected LAN: %s ✓"
+msgstr "Авто-определение LAN: %s ✓"
+
+msgid "Auto-detected WAN: %s ✓"
+msgstr "Авто-определение WAN: %s ✓"
+
+msgid "Manual selection: %s"
+msgstr "Ручной выбор: %s"
+
+msgid "Manual exclusions: %s"
+msgstr "Ручные исключения: %s"
+
+msgid "No interfaces configured"
+msgstr "Интерфейсы не настроены"
+
+msgid "No exclusions configured"
+msgstr "Исключения не настроены"
+
+msgid "Available LAN bridge: %s"
+msgstr "Доступный LAN-мост: %s"
+
+msgid "No LAN bridge detected"
+msgstr "LAN-мост не обнаружен"
+
+msgid "Available WAN interface: %s"
+msgstr "Доступный WAN-интерфейс: %s"
+
+msgid "No WAN interface detected"
+msgstr "WAN-интерфейс не обнаружен"
+
+msgid "Settings saved. Please restart the Clash service for changes to take effect."
+msgstr "Настройки сохранены. Для вступления изменений в силу перезапустите службу Clash."
+
+msgid "Failed to save settings: %s"
+msgstr "Не удалось сохранить настройки: %s"
+
+msgid "Clash service restarted successfully."
+msgstr "Служба Clash успешно перезапущена."
+
+msgid "Failed to restart Clash service: %s"
+msgstr "Не удалось перезапустить службу Clash: %s"
+
+msgid "Downloading mihomo kernel..."
+msgstr "Загрузка ядра mihomo..."
+
+msgid "Mihomo kernel downloaded and installed successfully!"
+msgstr "Ядро Mihomo успешно загружено и установлено!"
+
+msgid "Failed to download mihomo kernel: %s"
+msgstr "Не удалось загрузить ядро mihomo: %s"
+
+msgid "Failed to get release information"
+msgstr "Не удалось получить информацию о релизе"
+
+msgid "No binary found for architecture: %s"
+msgstr "Не найден исполняемый файл для архитектуры: %s"
+
+msgid "HTTP %d: %s"
+msgstr "HTTP %d: %s"
+
+msgid "Latest release is a pre-release"
+msgstr "Последний релиз является предварительным"
+
+msgid "Download failed"
+msgstr "Загрузка не удалась"
+
+msgid "Extraction failed"
+msgstr "Распаковка не удалась"
+
+msgid "Failed to read /sys/class/net:"
+msgstr "Не удалось прочитать /sys/class/net:"
+
+msgid "Failed to execute ip link:"
+msgstr "Не удалось выполнить ip link:"
+
+msgid "LuCI network API not available:"
+msgstr "Сетевой API LuCI недоступен:"
+
+msgid "LuCI network.getNetworks() not available:"
+msgstr "LuCI network.getNetworks() недоступен:"
+
+msgid "No network interfaces found on this system"
+msgstr "Сетевые интерфейсы в системе не найдены"
+
+msgid "UCI network detection failed, using fallback:"
+msgstr "Определение сети через UCI не удалось, используется резервный метод:"
+
+msgid "Failed to detect LAN bridge via ip command:"
+msgstr "Не удалось определить LAN-мост через команду ip:"
+
+msgid "Failed to detect LAN bridge:"
+msgstr "Не удалось обнаружить LAN-мост:"
+
+msgid "UCI WAN detection failed, using fallback:"
+msgstr "Определение WAN через UCI не удалось, используется резервный метод:"
+
+msgid "Failed to read route table:"
+msgstr "Не удалось прочитать таблицу маршрутизации:"
+
+msgid "Failed to detect WAN interface:"
+msgstr "Не удалось обнаружить WAN-интерфейс:"
+
+msgid "Failed to detect architecture:"
+msgstr "Не удалось определить архитектуру:"
+
+msgid "Failed to get latest release:"
+msgstr "Не удалось получить последний релиз:"
+
+msgid "Failed to update kernel status:"
+msgstr "Не удалось обновить статус ядра:"
+
+msgid "Failed to update interface checkboxes:"
+msgstr "Не удалось обновить флажки интерфейсов:"
+
+msgid "Failed to update auto detect settings:"
+msgstr "Не удалось обновить настройки автоопределения:"
+
+msgid "Failed to detect interfaces:"
+msgstr "Не удалось обнаружить интерфейсы:"
+
+msgid "Failed to re-detect interfaces:"
+msgstr "Не удалось повторно обнаружить интерфейсы:"
+
+msgid "Failed to uncheck detected %s interface:"
+msgstr "Не удалось снять выбор с определенного интерфейса %s:"
+
+msgid "Restart Clash service after installing or updating the kernel"
+msgstr "Перезапустите службу Clash после установки или обновления ядра"
+
+msgid "Restart Clash service after saving changes"
+msgstr "Перезапустите службу Clash после сохранения изменений"
+
+msgid "AUTO"
+msgstr "АВТО"

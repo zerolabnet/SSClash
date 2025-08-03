@@ -1,39 +1,45 @@
 {
-	"luci-app-ssclash": {
-		"description": "Grant access to Clash procedures",
-		"read": {
-			"file": {
-				"/opt/clash/config.yaml": [ "read" ],
-				"/opt/clash/excluded_interfaces": [ "read" ],
-				"/opt/clash/included_interfaces": [ "read" ],
-				"/opt/clash/settings": [ "read" ],
-				"/opt/clash/bin/clash": [ "read", "stat", "exec" ],
-				"/proc/net/dev": [ "read" ],
-				"/sbin/logread": [ "exec" ],
-				"/bin/uname": [ "exec" ]
-			},
-			"ubus": {
-				"file": [ "read", "stat", "exec" ],
-				"service": [ "list" ]
-			}
-		},
-		"write": {
-			"file": {
-				"/opt/clash/config.yaml": [ "write" ],
-				"/opt/clash/excluded_interfaces": [ "write" ],
-				"/opt/clash/included_interfaces": [ "write" ],
-				"/opt/clash/settings": [ "write" ],
-				"/opt/clash/bin/clash": [ "write" ],
-				"/tmp/mihomo-*": [ "write" ],
-				"/etc/init.d/clash": [ "exec" ],
-				"/usr/bin/curl": [ "exec" ],
-				"/bin/gzip": [ "exec" ],
-				"/bin/mv": [ "exec" ],
-				"/bin/chmod": [ "exec" ]
-			},
-			"ubus": {
-				"file": [ "write", "exec" ]
-			}
-		}
-	}
+    "luci-app-ssclash": {
+        "description": "Grant access to Clash procedures",
+        "read": {
+            "file": {
+                "/opt/clash/config.yaml": [ "read" ],
+                "/opt/clash/settings": [ "read" ],
+                "/opt/clash/bin/clash": [ "read", "stat", "exec" ],
+                "/opt/clash/lst/": [ "list" ],
+                "/opt/clash/lst/*.txt": [ "read" ],
+                "/proc/net/dev": [ "read" ],
+                "/proc/net/route": [ "read" ],
+                "/sys/class/net": [ "list" ],
+                "/sys/class/net/*": [ "list", "read" ],
+                "/sbin/logread": [ "exec" ],
+                "/bin/uname": [ "exec" ],
+                "/bin/ls": [ "exec" ],
+                "/sbin/ip": [ "exec" ],
+                "/usr/sbin/brctl": [ "exec" ]
+            },
+            "ubus": {
+                "file": [ "read", "stat", "exec" ],
+                "service": [ "list" ]
+            }
+        },
+        "write": {
+            "file": {
+                "/opt/clash/config.yaml": [ "write" ],
+                "/opt/clash/settings": [ "write" ],
+                "/opt/clash/bin/clash": [ "write" ],
+                "/opt/clash/lst/*.txt": [ "write", "remove" ],
+                "/tmp/mihomo-*": [ "write" ],
+                "/etc/init.d/clash": [ "exec" ],
+                "/usr/bin/curl": [ "exec" ],
+                "/bin/gzip": [ "exec" ],
+                "/bin/mv": [ "exec" ],
+                "/bin/chmod": [ "exec" ],
+                "/bin/mkdir": [ "exec" ]
+            },
+            "ubus": {
+                "file": [ "write", "exec" ]
+            }
+        }
+    }
 }
