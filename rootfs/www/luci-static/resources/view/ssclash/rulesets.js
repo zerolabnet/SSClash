@@ -79,7 +79,7 @@ async function handleDelete(filename) {
     ]);
 }
 
-function handleCreate() {
+function handleCreate(existingRulesets) {
     const nameInput = E('input', {
         'type': 'text',
         'class': 'cbi-input-text',
@@ -87,6 +87,7 @@ function handleCreate() {
     });
 
     const validationMessage = E('p', { 'style': 'color: red; display: none; margin-top: 10px;' });
+    const existingFilenames = existingRulesets.map(r => r.name);
 
     const validate = (value) => {
         if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
@@ -94,6 +95,14 @@ function handleCreate() {
             validationMessage.style.display = 'block';
             return false;
         }
+
+        const newFilename = value.toLowerCase() + '.txt';
+        if (existingFilenames.includes(newFilename)) {
+            validationMessage.textContent = _('A list with this name already exists.');
+            validationMessage.style.display = 'block';
+            return false;
+        }
+
         validationMessage.style.display = 'none';
         return true;
     };
@@ -192,7 +201,10 @@ return view.extend({
             E('div', { class: 'cbi-section' }, [
                 E('div', { 'style': 'display: flex; justify-content: space-between; align-items: center;' }, [
                     E('h2', _('Local Rulesets')),
-                    E('button', { 'class': 'btn', 'click': handleCreate }, _('Create New List'))
+                    E('button', {
+                        'class': 'btn',
+                        'click': () => handleCreate(rulesets)
+                    }, _('Create New List'))
                 ]),
                 E('p', { class: 'cbi-section-descr' }, [
                     _('Here you can manage local lists for use in rule-providers. Example usage in your config.yaml: type: file, format: text, path: ./lst/your-list.txt')

@@ -4,7 +4,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ssclash
-PKG_VERSION:=2.8.0
+PKG_VERSION:=2.8.1
 PKG_RELEASE:=1
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
@@ -75,6 +75,15 @@ define Package/$(PKG_NAME)/install
 		$(INSTALL_DATA) "$(PKG_BUILD_DIR)/po/ru/ssclash.lmo" \
 			"$(1)/usr/lib/lua/luci/i18n/ssclash.ru.lmo"; \
 	fi
+endef
+
+define Package/$(PKG_NAME)/postinst
+#!/bin/sh
+[ -n "$$IPKG_INSTROOT" ] || {
+	/etc/init.d/rpcd reload
+	rm -f /tmp/luci-*
+}
+exit 0
 endef
 
 define Package/$(PKG_NAME)/postrm

@@ -165,6 +165,9 @@ msgstr "Не удалось создать список: %s"
 msgid "Cannot read ruleset directory: %s"
 msgstr "Не удается прочитать директорию списков правил: %s"
 
+msgid "A list with this name already exists."
+msgstr "Список с таким именем уже существует."
+
 ### Модуль settings.js ###
 
 msgid "WAN Interfaces"
