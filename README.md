@@ -1,3 +1,6 @@
+📖 Read this in other languages:
+- [Русский](README.ru.md)
+
 <h3 align="center">Here's the step-by-step process for installing and configuring SSClash on your OpenWrt router</h3>
 
 # Setup Guide
