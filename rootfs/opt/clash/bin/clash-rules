@@ -503,6 +503,7 @@ apply_nft_output_rules() {
     local server_ips="$1"
     local excluded_interfaces="$2"
     local fake_ip_filter_mode="$3"
+    local fake_ip_range="$4"
 
     # Apply interface exclusions for output traffic
     apply_nft_interface_exclusion_output "$excluded_interfaces"
@@ -530,9 +531,19 @@ apply_nft_output_rules() {
 
     # Apply Clash exclusions
     apply_nft_clash_exclusions_output
-    # Mark packets for routing
-    nft add rule inet clash output meta mark 0 meta l4proto tcp meta mark set 0x0001
-    nft add rule inet clash output meta mark 0 meta l4proto udp meta mark set 0x0001
+
+    if [ -n "$fake_ip_range" ]; then
+        # Mark packets destined for fake-ip range
+        nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto tcp meta mark set 0x0001 counter
+        nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto udp meta mark set 0x0001 counter
+        msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range"
+    else
+        # Mark all remaining traffic
+        nft add rule inet clash output meta mark 0 meta l4proto tcp meta mark set 0x0001
+        nft add rule inet clash output meta mark 0 meta l4proto udp meta mark set 0x0001
+        msg "OUTPUT: Marking applied for all traffic"
+    fi
+
     msg "Output chain rules applied"
 }
 
@@ -654,6 +665,7 @@ apply_iptables_output_rules() {
     local server_ips="$1"
     local excluded_interfaces="$2"
     local fake_ip_filter_mode="$3"
+    local fake_ip_range="$4"
 
     # Apply interface exclusions for output traffic
     apply_iptables_interface_exclusion_output "$excluded_interfaces"
@@ -688,9 +700,15 @@ apply_iptables_output_rules() {
     iptables -t mangle -A CLASH_LOCAL -p tcp --sport 7890:7894 -j RETURN
     iptables -t mangle -A CLASH_LOCAL -p udp --sport 7890:7894 -j RETURN
 
-    # Mark packets for routing (only unmarked packets)
-    iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -j MARK --set-mark 0x0001
-    iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark 0x0001
+    if [ -n "$fake_ip_range" ]; then
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -d "$fake_ip_range" -j MARK --set-mark 0x0001
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -d "$fake_ip_range" -j MARK --set-mark 0x0001
+        msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range"
+    else
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -j MARK --set-mark 0x0001
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark 0x0001
+        msg "OUTPUT: Marking applied for all traffic"
+    fi
 
     msg "Output chain rules applied"
 }
@@ -722,7 +740,7 @@ apply_nft_rules() {
             apply_nft_interface_exclusion_mangle "$excluded_interfaces"
             nft add rule inet clash mangle jump CLASH_MARK
             # In exclude mode, we also need to process locally generated traffic
-            apply_nft_output_rules "$server_ips" "$excluded_interfaces" "$fake_ip_filter_mode"
+            apply_nft_output_rules "$server_ips" "$excluded_interfaces" "$fake_ip_filter_mode" "$fake_ip_range"
             msg "nftables output rules applied (exclude mode)"
             ;;
     esac
@@ -771,7 +789,7 @@ apply_iptables_rules() {
             apply_iptables_exclude_interface_rules "$excluded_interfaces"
             iptables -t mangle -A CLASH -j CLASH_PROCESS
             # In exclude mode, we also need to process locally generated traffic
-            apply_iptables_output_rules "$server_ips" "$excluded_interfaces" "$fake_ip_filter_mode"
+            apply_iptables_output_rules "$server_ips" "$excluded_interfaces" "$fake_ip_filter_mode" "$fake_ip_range"
             msg "iptables output rules applied (exclude mode)"
             ;;
     esac
