@@ -253,6 +253,7 @@ EXCLUDED_INTERFACES=${excludedInterfaces.join(',')}
         return false;
     }
 }
+
 async function detectLanBridge() {
     try {
         try {
@@ -343,8 +344,8 @@ async function detectWanInterface() {
 
 async function detectSystemArchitecture() {
     try {
-        const result = await L.resolveDefault(fs.exec('uname', ['-m']), '');
-        const arch = result.stdout ? result.stdout.trim() : result.trim();
+        const res = await L.resolveDefault(fs.exec('uname', ['-m']), '');
+        const archRaw = res.stdout ? res.stdout.trim() : res.trim();
 
         const archMap = {
             'x86_64': 'amd64',
@@ -370,6 +371,7 @@ async function detectSystemArchitecture() {
 
             'mips': 'mips-softfloat',
             'mipsel': 'mipsle-softfloat',
+            'mipsel_24kc': 'mipsle-softfloat',
             'mips64': 'mips64',
             'mips64el': 'mips64le',
 
@@ -378,7 +380,20 @@ async function detectSystemArchitecture() {
             'loongarch64': 'loong64'
         };
 
-        return archMap[arch] || 'amd64';
+        if (archRaw === 'mips') {
+            try {
+                const cpuinfoRes = await L.resolveDefault(fs.exec('cat', ['/proc/cpuinfo']), '');
+                const info = (cpuinfoRes.stdout ? cpuinfoRes.stdout : cpuinfoRes).toLowerCase();
+
+                if (info.includes('mt7621') || info.includes('1004kc') || info.includes('mipsel')) {
+                    return 'mipsle-softfloat';
+                }
+            } catch (e) {
+                console.error(_('Failed to read CPU info:'), e);
+            }
+        }
+
+        return archMap[archRaw] || 'amd64';
     } catch (e) {
         console.error(_('Failed to detect architecture:'), e);
         return 'amd64';
@@ -401,6 +416,7 @@ async function getLatestMihomoRelease() {
         return null;
     }
 }
+
 function normalizeVersion(str) {
     if (!str) return '';
     const match = str.match(/v?(\d+\.\d+\.\d+)/);
