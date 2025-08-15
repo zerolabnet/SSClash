@@ -1,30 +1,28 @@
 name: build
-
 on:
   push:
     branches:
       - master
-
   workflow_dispatch:
     inputs:
       release-tag:
         description: 'Release Tag (v1.x.x)'
         required: true
-
+        type: string
 jobs:
   release:
     name: Build and Release
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     env:
       PACKAGE_NAME: luci-app-ssclash
-      SDK_URL_PATH: https://downloads.openwrt.org/releases/23.05.5/targets/x86/64/
+      SDK_URL_PATH: https://downloads.openwrt.org/releases/24.10.2/targets/x86/64/
       SDK_NAME: -sdk-
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -yq gettext libncurses5-dev rsync xsltproc
+          sudo apt-get install -yq gettext libncurses5-dev rsync xsltproc build-essential gawk unzip
       - name: Create Directories
         run: |
           echo "SDK_DL_DIR=$(mktemp -d)" >> $GITHUB_ENV
@@ -49,15 +47,24 @@ jobs:
           ./scripts/feeds update luci > /dev/null 2>&1
           ln -s "${{ github.workspace }}" "package/$PACKAGE_NAME"
           make defconfig > /dev/null 2>&1
-          make package/${PACKAGE_NAME}/compile V=s > /dev/null
+          make package/${PACKAGE_NAME}/compile V=s
           find "$SDK_HOME/bin" -type f -name "${PACKAGE_NAME}_*.ipk" \
            -exec cp -f {} "${{ github.workspace }}" \;
-
+      - name: Generate Release Notes
+        run: |
+          echo "## Release ${{ github.event.inputs.release-tag }}" > release_notes.md
+          echo "" >> release_notes.md
+          echo "### Changes" >> release_notes.md
+          echo "- Built with OpenWrt SDK 24.10.2" >> release_notes.md
+          echo "- Architecture independent package" >> release_notes.md
+          echo "- Build date: $(date)" >> release_notes.md
       - name: Release and Upload Assets
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: "*.ipk"
-          tag_name: ${{ inputs.release-tag }}
+          tag_name: ${{ github.event.inputs.release-tag }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          

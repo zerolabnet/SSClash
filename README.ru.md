@@ -1,3 +1,7 @@
+<p align="center">
+ <img src=".github/assets/images/logos/SSClash.png" width="200">
+</p>
+
 <h3 align="center">Пошаговая инструкция по установке и настройке SSClash на вашем роутере с OpenWrt</h3>
 
 # Руководство по установке
@@ -26,8 +30,8 @@ opkg install kmod-nft-tproxy
 Загрузите пакет SSClash и установите его.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.8.2/luci-app-ssclash_2.8.2-1_all.ipk -o /tmp/luci-app-ssclash_2.8.2-1_all.ipk
-opkg install /tmp/luci-app-ssclash_2.8.2-1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.8.3/luci-app-ssclash_2.8.3-1_all.ipk -o /tmp/luci-app-ssclash_2.8.3-1_all.ipk
+opkg install /tmp/luci-app-ssclash_2.8.3-1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -104,7 +108,7 @@ SSClash предлагает два режима обработки интерф
 * **Блокировать QUIC-трафик**: Блокирует UDP-порт 443 для повышения эффективности прокси для таких сервисов, как YouTube
 
 <p align="center">
- <img src="scr-01.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-01.png" width="100%">
 </p>
 
 ## Шаг 6: Управление конфигурацией Clash
@@ -117,7 +121,7 @@ SSClash предлагает два режима обработки интерф
 * Функциональность **Сохранить и применить** с автоматической перезагрузкой службы
 
 <p align="center">
- <img src="scr-02.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-02.png" width="100%">
 </p>
 
 ## Шаг 7: Управление локальными наборами правил
@@ -130,7 +134,7 @@ SSClash предлагает два режима обработки интерф
 * **Использование**: Ссылка в конфигурации как `type: file, format: text, path: ./lst/your_list.txt`
 
 <p align="center">
- <img src="scr-03.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-03.png" width="100%">
 </p>
 
 ## Шаг 8: Мониторинг логов в реальном времени
@@ -143,7 +147,7 @@ SSClash предлагает два режима обработки интерф
 * **Автоматическая прокрутка** к последним записям
 
 <p align="center">
- <img src="scr-04.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-04.png" width="100%">
 </p>
 
 ## Шаг 9: Доступ к панели управления
@@ -151,7 +155,7 @@ SSClash предлагает два режима обработки интерф
 Получите доступ к панели управления Clash прямо из интерфейса LuCI с автоматическим определением конфигурации.
 
 <p align="center">
- <img src="scr-05.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-05.png" width="100%">
 </p>
 
 # Удаление Clash

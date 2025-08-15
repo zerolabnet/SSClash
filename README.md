@@ -1,6 +1,10 @@
 📖 Read this in other languages:
 - [Русский](README.ru.md)
 
+<p align="center">
+ <img src=".github/assets/images/logos/SSClash.png" width="200">
+</p>
+
 <h3 align="center">Here's the step-by-step process for installing and configuring SSClash on your OpenWrt router</h3>
 
 # Setup Guide
@@ -28,8 +32,8 @@ For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
 Download the SSClash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.8.2/luci-app-ssclash_2.8.2-1_all.ipk -o /tmp/luci-app-ssclash_2.8.2-1_all.ipk
-opkg install /tmp/luci-app-ssclash_2.8.2-1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.8.3/luci-app-ssclash_2.8.3-1_all.ipk -o /tmp/luci-app-ssclash_2.8.3-1_all.ipk
+opkg install /tmp/luci-app-ssclash_2.8.3-1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -102,7 +106,7 @@ SSClash offers two interface processing modes:
 - **Block QUIC traffic**: Blocks UDP port 443 to improve proxy effectiveness for services like YouTube
 
 <p align="center">
- <img src="scr-01.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-01.png" width="100%">
 </p>
 
 ## Step 6: Clash Configuration Management
@@ -115,7 +119,7 @@ Edit your Clash configuration with the built-in editor featuring:
 - **Save & Apply** functionality with automatic service reload
 
 <p align="center">
- <img src="scr-02.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-02.png" width="100%">
 </p>
 
 ## Step 7: Local Rulesets Management
@@ -128,7 +132,7 @@ Create and manage local rule files for use with `rule-providers`:
 - **Usage**: Reference in config as `type: file, format: text, path: ./lst/your_list.txt`
 
 <p align="center">
- <img src="scr-03.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-03.png" width="100%">
 </p>
 
 ## Step 8: Real-time Log Monitoring
@@ -141,7 +145,7 @@ Monitor Clash activity with the integrated log viewer:
 - **Auto-scroll** to latest entries
 
 <p align="center">
- <img src="scr-04.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-04.png" width="100%">
 </p>
 
 ## Step 9: Dashboard Access
@@ -149,7 +153,7 @@ Monitor Clash activity with the integrated log viewer:
 Access the Clash dashboard directly from the LuCI interface with automatic configuration detection.
 
 <p align="center">
- <img src="scr-05.png" width="100%">
+ <img src=".github/assets/images/screenshots/scr-05.png" width="100%">
 </p>
 
 # Remove Clash
