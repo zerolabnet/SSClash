@@ -3,6 +3,7 @@
         "description": "Grant access to Clash procedures",
         "read": {
             "file": {
+                "/etc/openwrt_release": [ "read" ],
                 "/opt/clash/config.yaml": [ "read" ],
                 "/opt/clash/settings": [ "read" ],
                 "/opt/clash/bin/clash": [ "read", "stat", "exec" ],
@@ -13,7 +14,6 @@
                 "/sys/class/net": [ "list" ],
                 "/sys/class/net/*": [ "list", "read" ],
                 "/sbin/logread": [ "exec" ],
-                "/bin/uname": [ "exec" ],
                 "/bin/ls": [ "exec" ],
                 "/sbin/ip": [ "exec" ],
                 "/usr/sbin/brctl": [ "exec" ]
@@ -29,7 +29,7 @@
                 "/opt/clash/settings": [ "write" ],
                 "/opt/clash/bin/clash": [ "write" ],
                 "/opt/clash/lst/*.txt": [ "write", "remove" ],
-                "/tmp/mihomo-*": [ "write" ],
+                "/tmp/mihomo-*": [ "write", "remove" ],
                 "/etc/init.d/clash": [ "exec" ],
                 "/usr/bin/curl": [ "exec" ],
                 "/bin/gzip": [ "exec" ],

@@ -68,9 +68,38 @@ async function toggleService() {
 }
 
 function parseYamlValue(yaml, key) {
-    const regex = new RegExp(`^\\s*${key}:[ \t]*([^#\n\r]*)`, 'm');
-    const match = yaml.match(regex);
-    return match ? match[1].trim() : null;
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`^\\s*${escapedKey}\\s*:\\s*(["\']?)([^#\\r\\n]+?)\\1\\s*(?:#.*)?$`, 'm');
+    const m = yaml.match(re);
+    return m ? m[2].trim() : null;
+}
+
+function normalizeHostPortFromAddr(addr, fallbackHost, fallbackPort) {
+    if (!addr) return { host: fallbackHost, port: fallbackPort };
+    const cleaned = addr.replace(/["']/g, '').trim();
+    const hostPort = cleaned.replace(/^\[|\]$/g, '');
+    const lastColon = hostPort.lastIndexOf(':');
+    let host = fallbackHost, port = fallbackPort;
+    if (lastColon !== -1) {
+        host = hostPort.slice(0, lastColon);
+        port = hostPort.slice(lastColon + 1);
+    }
+    if (host === '0.0.0.0' || host === '::' || host === '') {
+        host = fallbackHost;
+    }
+    return { host, port };
+}
+
+function computeUiPath(externalUiName, externalUi) {
+    if (externalUiName) {
+        const name = externalUiName.replace(/(^\/+|\/+$)/g, '');
+        return `/${name}/`;
+    }
+    if (externalUi && !/[\/\\\.]/.test(externalUi)) {
+        const name = externalUi.trim();
+        return `/${name}/`;
+    }
+    return '/ui/';
 }
 
 async function openDashboard() {
@@ -79,24 +108,30 @@ async function openDashboard() {
         ui.addNotification(null, E('p', _('Popup was blocked. Please allow popups for this site.')), 'warning');
         return;
     }
-
     try {
         if (!(await getServiceStatus())) {
             newWindow.close();
             ui.addNotification(null, E('p', _('Service is not running.')), 'error');
             return;
         }
-
         const config = await fs.read('/opt/clash/config.yaml');
-        const externalController = parseYamlValue(config, 'external-controller');
-        const port = externalController ? externalController.split(':').pop() : '9090';
-
-        const path = parseYamlValue(config, 'external-ui') || 'ui';
-        const protocol = window.location.protocol;
-        const hostname = window.location.hostname;
-
-        const url = `${protocol}//${hostname}:${port}/${path}/?hostname=${hostname}&port=${port}`;
-        newWindow.location.href = url;
+        const ec = parseYamlValue(config, 'external-controller');
+        const ecTls = parseYamlValue(config, 'external-controller-tls');
+        const secret = parseYamlValue(config, 'secret');
+        const externalUi = parseYamlValue(config, 'external-ui');
+        const externalUiName = parseYamlValue(config, 'external-ui-name');
+        const baseHost = window.location.hostname;
+        const basePort = '9090';
+        const useTls = !!ecTls;
+        const { host, port } = normalizeHostPortFromAddr(useTls ? ecTls : ec, baseHost, basePort);
+        const scheme = useTls ? 'https:' : 'http:';
+        const uiPath = computeUiPath(externalUiName, externalUi);
+        const qp = new URLSearchParams();
+        if (secret) qp.set('secret', secret);
+        qp.set('hostname', host);
+        qp.set('port', port);
+        const url = `${scheme}//${host}:${port}${uiPath}?${qp.toString()}`;
+        newWindow.location.replace(url);
     } catch (error) {
         newWindow.close();
         console.error(_('Error opening dashboard:'), error);
@@ -133,10 +168,8 @@ return view.extend({
     load: function() {
         return L.resolveDefault(fs.read('/opt/clash/config.yaml'), '');
     },
-
     render: async function(config) {
         const running = await getServiceStatus();
-
         const saveAndApply = async function() {
             if (startStopButton) startStopButton.disabled = true;
             try {
@@ -153,19 +186,23 @@ return view.extend({
                 if (startStopButton) startStopButton.disabled = false;
             }
         };
-
         const view = E([
             E('div', { 'style': 'margin-bottom: 20px;' }, [
-                E('button', { 'class': 'btn', 'click': openDashboard }, _('Open Dashboard')),
-                (startStopButton = E('button', {
-                    'class': 'btn',
-                    'click': toggleService,
-                    'style': 'margin-left: 10px;'
-                }, running ? _('Stop Service') : _('Start Service'))),
-                E('span', {
-                    'class': 'label',
-                    'style': `margin-left: 15px; padding: 4px 8px; border-radius: 3px; font-size: 12px; color: white; background-color: ${running ? '#5cb85c' : '#d9534f'};`
-                }, running ? _('Clash is running') : _('Clash stopped'))
+                E('div', {
+                    'style': 'margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 10px;'
+                }, [
+                    E('button', { 'class': 'btn', 'click': openDashboard }, _('Open Dashboard')),
+                    (startStopButton = E('button', {
+                        'class': 'btn',
+                        'click': toggleService
+                    }, running ? _('Stop Service') : _('Start Service')))
+                ]),
+                E('div', { 'style': 'display: flex; justify-content: flex-start;' }, [
+                    E('span', {
+                        'class': 'label',
+                        'style': `padding: 6px 12px; border-radius: 3px; font-size: 12px; color: white; background-color: ${running ? '#5cb85c' : '#d9534f'}; display: inline-block;`
+                    }, running ? _('Clash is running') : _('Clash stopped'))
+                ])
             ]),
             E('h2', _('Clash Configuration')),
             E('p', { 'class': 'cbi-section-descr' }, _('Your current Clash config. When applied, the changes will be saved and the service will be restarted.')),
@@ -180,11 +217,9 @@ return view.extend({
                 }, _('Save & Apply Configuration'))
             ])
         ]);
-
         initializeAceEditor(config);
         return view;
     },
-
     handleSave: null,
     handleSaveApply: null,
     handleReset: null

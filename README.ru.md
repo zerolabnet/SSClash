@@ -30,8 +30,8 @@ opkg install kmod-nft-tproxy
 Загрузите пакет SSClash и установите его.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.8.3/luci-app-ssclash_2.8.3-r1_all.ipk -o /tmp/luci-app-ssclash_2.8.3-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_2.8.3-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.9.0/luci-app-ssclash_2.9.0-r1_all.ipk -o /tmp/luci-app-ssclash_2.9.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_2.9.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
 

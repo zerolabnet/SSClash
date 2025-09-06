@@ -344,60 +344,44 @@ async function detectWanInterface() {
 
 async function detectSystemArchitecture() {
     try {
-        const res = await L.resolveDefault(fs.exec('uname', ['-m']), '');
-        const archRaw = res.stdout ? res.stdout.trim() : res.trim();
+        const releaseInfo = await L.resolveDefault(fs.read('/etc/openwrt_release'), null);
+        let distribArch = '';
 
-        const archMap = {
-            'x86_64': 'amd64',
-            'amd64': 'amd64',
-
-            'aarch64': 'arm64',
-            'arm64': 'arm64',
-
-            'armv7l': 'armv7',
-            'armv7': 'armv7',
-            'arm': 'armv7',
-
-            'armv6l': 'armv6',
-            'armv6': 'armv6',
-
-            'armv5tel': 'armv5',
-            'armv5': 'armv5',
-
-            'i386': '386',
-            'i686': '386',
-            'i586': '386',
-            'i486': '386',
-
-            'mips': 'mips-softfloat',
-            'mipsel': 'mipsle-softfloat',
-            'mipsel_24kc': 'mipsle-softfloat',
-            'mips64': 'mips64',
-            'mips64el': 'mips64le',
-
-            'riscv64': 'riscv64',
-
-            'loongarch64': 'loong64'
-        };
-
-        if (archRaw === 'mips') {
-            try {
-                const cpuinfoRes = await L.resolveDefault(fs.exec('cat', ['/proc/cpuinfo']), '');
-                const info = (cpuinfoRes.stdout ? cpuinfoRes.stdout : cpuinfoRes).toLowerCase();
-
-                if (info.includes('mt7621') || info.includes('1004kc') || info.includes('mipsel')) {
-                    return 'mipsle-softfloat';
-                }
-            } catch (e) {
-                console.error(_('Failed to read CPU info:'), e);
+        if (releaseInfo) {
+            const match = releaseInfo.match(/^DISTRIB_ARCH='([^']*)'/m);
+            if (match && match[1]) {
+                distribArch = match[1];
             }
         }
 
-        return archMap[archRaw] || 'amd64';
+        if (distribArch) {
+            if (distribArch.startsWith('aarch64_')) return 'arm64';
+            if (distribArch === 'x86_64') return 'amd64';
+            if (distribArch.startsWith('i386_')) return '386';
+            if (distribArch.startsWith('riscv64_')) return 'riscv64';
+            if (distribArch.startsWith('loongarch64_')) return 'loong64';
+
+            if (distribArch.includes('_neon-vfp')) return 'armv7';
+            if (distribArch.includes('_neon') || distribArch.includes('_vfp')) return 'armv6';
+            if (distribArch.startsWith('arm_')) return 'armv5';
+
+            if (distribArch.startsWith('mips64el_')) return 'mips64le';
+            if (distribArch.startsWith('mips64_')) return 'mips64';
+            if (distribArch.startsWith('mipsel_')) {
+                if (distribArch.includes('hardfloat')) return 'mipsle-hardfloat';
+                return 'mipsle-softfloat';
+            }
+            if (distribArch.startsWith('mips_')) {
+                if (distribArch.includes('hardfloat')) return 'mips-hardfloat';
+                return 'mips-softfloat';
+            }
+        }
     } catch (e) {
-        console.error(_('Failed to detect architecture:'), e);
-        return 'amd64';
+        console.error('Failed to read /etc/openwrt_release or parse architecture.', e.message);
     }
+
+    ui.addNotification(null, E('p', 'Could not determine system architecture from /etc/openwrt_release. This might not be a standard OpenWrt system. Falling back to default: amd64.'), 'error');
+    return 'amd64';
 }
 
 async function getLatestMihomoRelease() {
