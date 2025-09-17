@@ -103,37 +103,38 @@ function computeUiPath(externalUiName, externalUi) {
 }
 
 async function openDashboard() {
-    const newWindow = window.open('about:blank', '_blank');
-    if (!newWindow) {
-        ui.addNotification(null, E('p', _('Popup was blocked. Please allow popups for this site.')), 'warning');
-        return;
-    }
     try {
         if (!(await getServiceStatus())) {
-            newWindow.close();
             ui.addNotification(null, E('p', _('Service is not running.')), 'error');
             return;
         }
+
         const config = await fs.read('/opt/clash/config.yaml');
         const ec = parseYamlValue(config, 'external-controller');
         const ecTls = parseYamlValue(config, 'external-controller-tls');
         const secret = parseYamlValue(config, 'secret');
         const externalUi = parseYamlValue(config, 'external-ui');
         const externalUiName = parseYamlValue(config, 'external-ui-name');
+
         const baseHost = window.location.hostname;
         const basePort = '9090';
         const useTls = !!ecTls;
+
         const { host, port } = normalizeHostPortFromAddr(useTls ? ecTls : ec, baseHost, basePort);
         const scheme = useTls ? 'https:' : 'http:';
         const uiPath = computeUiPath(externalUiName, externalUi);
+
         const qp = new URLSearchParams();
         if (secret) qp.set('secret', secret);
         qp.set('hostname', host);
         qp.set('port', port);
         const url = `${scheme}//${host}:${port}${uiPath}?${qp.toString()}`;
-        newWindow.location.replace(url);
+
+        const newWindow = window.open(url, '_blank');
+        if (!newWindow) {
+            ui.addNotification(null, E('p', _('Popup was blocked. Please allow popups for this site.')), 'warning');
+        }
     } catch (error) {
-        newWindow.close();
         console.error(_('Error opening dashboard:'), error);
         ui.addNotification(null, E('p', _('Failed to open dashboard: %s').format(error.message)), 'error');
     }
@@ -186,23 +187,27 @@ return view.extend({
                 if (startStopButton) startStopButton.disabled = false;
             }
         };
+
         const view = E([
-            E('div', { 'style': 'margin-bottom: 20px;' }, [
-                E('div', {
-                    'style': 'margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 10px;'
-                }, [
-                    E('button', { 'class': 'btn', 'click': openDashboard }, _('Open Dashboard')),
-                    (startStopButton = E('button', {
-                        'class': 'btn',
-                        'click': toggleService
-                    }, running ? _('Stop Service') : _('Start Service')))
-                ]),
-                E('div', { 'style': 'display: flex; justify-content: flex-start;' }, [
-                    E('span', {
-                        'class': 'label',
-                        'style': `padding: 6px 12px; border-radius: 3px; font-size: 12px; color: white; background-color: ${running ? '#5cb85c' : '#d9534f'}; display: inline-block;`
-                    }, running ? _('Clash is running') : _('Clash stopped'))
-                ])
+            E('div', {
+                'style': 'margin-bottom: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;'
+            }, [
+                E('button', {
+                    'class': 'btn',
+                    'click': openDashboard,
+                    'style': 'margin: 0;'
+                }, _('Open Dashboard')),
+
+                (startStopButton = E('button', {
+                    'class': 'btn',
+                    'click': toggleService,
+                    'style': 'margin: 0;'
+                }, running ? _('Stop Service') : _('Start Service'))),
+
+                E('span', {
+                    'class': 'label',
+                    'style': `padding: 4px 10px; border-radius: 3px; font-size: 12px; color: white; background-color: ${running ? '#5cb85c' : '#d9534f'}; margin: 0;`
+                }, running ? _('Clash is running') : _('Clash stopped'))
             ]),
             E('h2', _('Clash Configuration')),
             E('p', { 'class': 'cbi-section-descr' }, _('Your current Clash config. When applied, the changes will be saved and the service will be restarted.')),
@@ -217,6 +222,7 @@ return view.extend({
                 }, _('Save & Apply Configuration'))
             ])
         ]);
+
         initializeAceEditor(config);
         return view;
     },
