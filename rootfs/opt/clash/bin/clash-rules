@@ -380,6 +380,13 @@ extract_subscription_ips() {
 
 # Function to create subscription IP cache with locking
 cache_subscription_ips() {
+    # Check if we have any proxy-providers first
+    local providers_info=$(extract_proxy_providers)
+    if [ -z "$providers_info" ]; then
+        msg "No proxy-providers found, skipping subscription cache"
+        return 0
+    fi
+
     local lock_timeout=30
     local lock_acquired=0
 
@@ -485,27 +492,34 @@ extract_server_ips() {
     }
     ' "$CONFIG_FILE")
 
-    # Try to get subscription servers from cache first
-    if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
-        # Check if cache file is newer than 1 hour using find
-        if [ -n "$(find "$SUBSCRIPTION_CACHE_FILE" -mmin -60 2>/dev/null)" ]; then
-            subscription_servers=$(cat "$SUBSCRIPTION_CACHE_FILE")
-            msg "Using cached subscription IPs (fresh cache)"
+    # Check if proxy-providers exist before processing subscriptions
+    local providers_exist=$(extract_proxy_providers)
+    if [ -z "$providers_exist" ]; then
+        msg "No proxy-providers configured, using only config servers"
+        subscription_servers=""
+    else
+        # Try to get subscription servers from cache first
+        if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
+            # Check if cache file is newer than 1 hour using find
+            if [ -n "$(find "$SUBSCRIPTION_CACHE_FILE" -mmin -60 2>/dev/null)" ]; then
+                subscription_servers=$(cat "$SUBSCRIPTION_CACHE_FILE")
+                msg "Using cached subscription IPs (fresh cache)"
+            else
+                msg "Subscription cache is stale, updating..."
+                subscription_servers=$(extract_subscription_ips)
+                # Update cache
+                if [ -n "$subscription_servers" ]; then
+                    echo "$subscription_servers" > "$SUBSCRIPTION_CACHE_FILE"
+                fi
+            fi
         else
-            msg "Subscription cache is stale, updating..."
+            msg "No subscription cache found, extracting subscription IPs..."
             subscription_servers=$(extract_subscription_ips)
-            # Update cache
+            # Create cache
             if [ -n "$subscription_servers" ]; then
+                mkdir -p "$(dirname "$SUBSCRIPTION_CACHE_FILE")"
                 echo "$subscription_servers" > "$SUBSCRIPTION_CACHE_FILE"
             fi
-        fi
-    else
-        msg "No subscription cache found, extracting subscription IPs..."
-        subscription_servers=$(extract_subscription_ips)
-        # Create cache
-        if [ -n "$subscription_servers" ]; then
-            mkdir -p "$(dirname "$SUBSCRIPTION_CACHE_FILE")"
-            echo "$subscription_servers" > "$SUBSCRIPTION_CACHE_FILE"
         fi
     fi
 
@@ -796,15 +810,10 @@ apply_nft_clash_exclusions_mangle() {
 
 # For nftables - exclude proxy server IPs in mangle chain
 apply_nft_server_exclusions_mangle() {
-    local server_ips="$1"
-    if [ -n "$server_ips" ]; then
-        echo "$server_ips" | while IFS= read -r ip; do
-            [ -n "$ip" ] && nft add rule inet clash CLASH_MARK ip daddr "$ip/32" return
-        done
-        msg "Proxy server IPs excluded from proxy in mangle"
-    else
-        msg "No proxy server IPs to exclude"
-    fi
+    # The set `proxy_servers` is populated in `apply_nft_rules`.
+    # This rule references the set for efficient matching.
+    nft add rule inet clash CLASH_MARK ip daddr @proxy_servers return
+    msg "Proxy server IPs excluded from proxy in mangle via nft set"
 }
 
 # For nftables - apply fake-ip or global marking in mangle chain
@@ -880,9 +889,8 @@ apply_nft_output_rules() {
 
         # Apply server exclusions if provided
         if [ -n "$server_ips" ]; then
-            echo "$server_ips" | while IFS= read -r ip; do
-                [ -n "$ip" ] && nft add rule inet clash output ip saddr "$ip/32" return && nft add rule inet clash output ip daddr "$ip/32" return
-            done
+            nft add rule inet clash output ip saddr @proxy_servers return
+            nft add rule inet clash output ip daddr @proxy_servers return
         fi
     fi
 
@@ -1091,6 +1099,15 @@ apply_nft_rules() {
     nft add chain inet clash output '{ type route hook output priority mangle; policy accept; }'
     nft add chain inet clash CLASH_MARK
 
+    # Create a named set for proxy server IPs for efficient management
+    nft add set inet clash proxy_servers '{ type ipv4_addr; flags interval; auto-merge; }'
+    # Populate the set with server IPs
+    if [ -n "$server_ips" ]; then
+        local nft_elements=$(echo "$server_ips" | tr '\n' ',' | sed 's/,$//')
+        nft add element inet clash proxy_servers "{ $nft_elements }"
+        msg "Populated proxy_servers set with $(echo "$server_ips" | wc -l | xargs) IPs."
+    fi
+
     case "$MODE" in
         "explicit")
             apply_nft_explicit_interface_mangle || return 1
@@ -1115,7 +1132,7 @@ apply_nft_rules() {
     if [ "$fake_ip_filter_mode" != "whitelist" ]; then
         apply_nft_dhcp_mangle
         apply_nft_reserved_networks_mangle
-        apply_nft_server_exclusions_mangle "$server_ips"
+        apply_nft_server_exclusions_mangle
         msg "Full exclusion rules applied"
     else
         msg "Minimal exclusion rules applied (fake-ip-filter-mode: whitelist - only system protection)"
@@ -1180,6 +1197,83 @@ apply_iptables_rules() {
         msg "iptables rules applied successfully (exclude mode with output processing)"
     else
         msg "iptables rules applied successfully (explicit mode without output processing)"
+    fi
+}
+
+# This function intelligently updates subscription IPs without a full script restart
+update_rules() {
+    msg "Intelligently updating subscription IPs..."
+
+    local old_ips=""
+    if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
+        old_ips=$(cat "$SUBSCRIPTION_CACHE_FILE")
+    fi
+
+    # This function updates the cache and returns 0 on success
+    cache_subscription_ips
+    if [ $? -ne 0 ]; then
+        msg "ERROR: Failed to update subscription cache. Aborting update."
+        return 1
+    fi
+
+    local new_ips=""
+    if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
+        new_ips=$(cat "$SUBSCRIPTION_CACHE_FILE")
+    fi
+
+    if [ "$old_ips" = "$new_ips" ]; then
+        msg "Subscription IPs unchanged, no update needed."
+        return 0
+    fi
+
+    msg "Subscription IPs have changed. Applying delta update."
+
+    if hash nft 2>/dev/null && nft list set inet clash proxy_servers >/dev/null 2>&1; then
+        # For nftables, simply flush the set and add all new IPs.
+        # This is atomic and much faster than comparing IPs.
+        msg "Updating nftables proxy_servers set..."
+        nft flush set inet clash proxy_servers
+        if [ -n "$new_ips" ]; then
+            # Format IPs for nft: { ip1, ip2, ip3 }
+            local nft_elements=$(echo "$new_ips" | tr '\n' ',' | sed 's/,$//')
+            nft add element inet clash proxy_servers "{ $nft_elements }"
+            msg "Updated proxy_servers set with $(echo "$new_ips" | wc -l | xargs) IPs."
+        else
+            msg "No subscription IPs to add to the set."
+        fi
+    elif hash iptables 2>/dev/null; then
+        # For iptables, find the difference and apply changes incrementally.
+        local ips_to_remove=$(comm -23 <(echo "$old_ips" | sort -u) <(echo "$new_ips" | sort -u))
+        local ips_to_add=$(comm -13 <(echo "$old_ips" | sort -u) <(echo "$new_ips" | sort -u))
+
+        msg "Updating iptables rules..."
+
+        if [ -n "$ips_to_remove" ]; then
+            echo "$ips_to_remove" | while IFS= read -r ip; do
+                [ -z "$ip" ] && continue
+                iptables -t mangle -D CLASH_PROCESS -d "$ip/32" -j RETURN 2>/dev/null
+                iptables -t mangle -D CLASH_PROCESS -s "$ip/32" -j RETURN 2>/dev/null
+                iptables -t mangle -D CLASH_LOCAL -d "$ip/32" -j RETURN 2>/dev/null
+                iptables -t mangle -D CLASH_LOCAL -s "$ip/32" -j RETURN 2>/dev/null
+            done
+            msg "Removed $(echo "$ips_to_remove" | wc -l | xargs) old IP rules."
+        fi
+
+        if [ -n "$ips_to_add" ]; then
+            echo "$ips_to_add" | while IFS= read -r ip; do
+                [ -z "$ip" ] && continue
+                iptables -t mangle -A CLASH_PROCESS -d "$ip/32" -j RETURN
+                iptables -t mangle -A CLASH_PROCESS -s "$ip/32" -j RETURN
+                iptables -t mangle -A CLASH_LOCAL -d "$ip/32" -j RETURN
+                iptables -t mangle -A CLASH_LOCAL -s "$ip/32" -j RETURN
+            done
+            msg "Added $(echo "$ips_to_add" | wc -l | xargs) new IP rules."
+        fi
+        msg "iptables rules updated successfully."
+    else
+        # If no supported method is found, fall back to the old behavior.
+        msg "No active rules found or update method not supported. Falling back to full restart."
+        stop && start
     fi
 }
 
@@ -1282,7 +1376,6 @@ stop() {
     msg "Clash rules script stopped successfully"
 }
 
-# Intelligent update command with cache comparison and conditional reload
 case "$1" in
     start)
         start
@@ -1295,40 +1388,12 @@ case "$1" in
         start
         ;;
     update)
-        msg "Updating subscription cache and reloading rules if needed"
-
-        # Save current cache checksum for comparison
-        old_checksum=""
-        if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
-            old_checksum=$(md5sum "$SUBSCRIPTION_CACHE_FILE" 2>/dev/null | cut -d' ' -f1)
+        providers_exist=$(extract_proxy_providers)
+        if [ -z "$providers_exist" ]; then
+            msg "No proxy-providers configured, nothing to update."
+            exit 0
         fi
-
-        # Update subscription cache
-        cache_subscription_ips
-
-        # Check if cache actually changed
-        new_checksum=""
-        if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
-            new_checksum=$(md5sum "$SUBSCRIPTION_CACHE_FILE" 2>/dev/null | cut -d' ' -f1)
-        fi
-
-        # Reload rules only if cache changed and rules are currently active
-        if [ "$old_checksum" != "$new_checksum" ]; then
-            msg "Subscription IPs changed, reloading rules"
-            if hash nft 2>/dev/null && nft list table inet clash >/dev/null 2>&1; then
-                # Mark cache as fresh to avoid double parsing in start()
-                touch "$SUBSCRIPTION_CACHE_FILE"
-                stop && start
-            elif hash iptables 2>/dev/null && iptables -t mangle -L CLASH >/dev/null 2>&1; then
-                # Mark cache as fresh to avoid double parsing in start()
-                touch "$SUBSCRIPTION_CACHE_FILE"
-                stop && start
-            else
-                msg "No active rules found to reload"
-            fi
-        else
-            msg "Subscription IPs unchanged, no reload needed"
-        fi
+        update_rules
         ;;
     *)
         echo "Usage: $0 {start|stop|restart|update}"

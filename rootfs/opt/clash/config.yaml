@@ -15,7 +15,7 @@ dns:
   listen: 0.0.0.0:7874
   ipv6: false
   # Bootstrap DNS
-  default-nameserver: ['1.1.1.1#PROXY', '1.0.0.1#PROXY', '8.8.8.8#PROXY', '8.8.4.4#PROXY']
+  default-nameserver: ['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4']
   # Rules for specific domains
   nameserver-policy:
     '+.polaris-iot.com': [77.88.8.8, 77.88.8.1]
@@ -86,6 +86,27 @@ proxies:
       short-id: 0890fec52c6dd1ca # change it
     client-fingerprint: chrome
 
+proxy-providers:
+  # Provider name
+  provider1:
+    type: http
+    url: "https://provider-domain.example.org/subscription-url" # change it
+    path: ./proxy_providers/provider1.yaml
+    interval: 43200
+    proxy: PROXY
+    header:
+      User-Agent:
+      - "mihomo/1.19.4"
+      Authorization:
+      - 'token 123'
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+      timeout: 5000
+      lazy: true
+      expected-status: 204
+
 proxy-groups:
   # Select (used for selecting proxy or proxy group)
   - name: PROXY
@@ -100,13 +121,18 @@ proxy-groups:
     url: 'https://www.gstatic.com/generate_204' # or https://cp.cloudflare.com/generate_204
     interval: 300
 
-  # # Load-balance
-  # - name: LB-PROXY
-  #   type: load-balance
-  #   proxies: [XX-reality, YY-reality] # change it, add the others
-  #   url: 'https://www.gstatic.com/generate_204'
-  #   interval: 300
-  #   strategy: consistent-hashing # or round-robin
+  # Load-balance
+  - name: LB-PROXY
+    type: load-balance
+    proxies: [XX-reality, YY-reality] # change it, add the others
+    url: 'https://www.gstatic.com/generate_204'
+    interval: 300
+    strategy: consistent-hashing # or round-robin
+
+  # Subscriptions
+  - name: SUBS
+    type: select
+    use: [provider1]
 
 rule-providers:
   direct-domain:
@@ -133,6 +159,11 @@ rule-providers:
     interval: 1800
     path: ./ruleset/proxy-domain.txt
     proxy: PROXY
+  local-list-proxy-domain:
+    behavior: classical
+    type: file
+    format: text
+    path: ./lst/local-list-proxy-domain.txt # change it
   proxy-ip:
     behavior: classical
     type: http
@@ -158,6 +189,7 @@ rules:
   - RULE-SET,direct-domain,DIRECT
   - RULE-SET,direct-ip,DIRECT
   - RULE-SET,proxy-domain,PROXY
+  - RULE-SET,local-list-proxy-domain,PROXY
   - RULE-SET,proxy-ip,PROXY
   - RULE-SET,antifilter-ip,PROXY
   - MATCH,DIRECT

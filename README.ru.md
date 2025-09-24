@@ -30,8 +30,8 @@ opkg install kmod-nft-tproxy
 Загрузите пакет SSClash и установите его.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.0.0/luci-app-ssclash_3.0.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.0.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_3.0.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.1.0/luci-app-ssclash_3.1.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.1.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_3.1.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -58,19 +58,19 @@ cd /opt/clash/bin
 Для архитектуры **amd64**:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-amd64-compatible-v1.19.13.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.14/mihomo-linux-amd64-compatible-v1.19.14.gz -o clash.gz
 ```
 
 Для архитектуры **arm64**:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-arm64-v1.19.13.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.14/mihomo-linux-arm64-v1.19.14.gz -o clash.gz
 ```
 
 Для архитектуры **mipsel\_24kc**:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-mipsle-softfloat-v1.19.13.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.14/mihomo-linux-mipsle-softfloat-v1.19.14.gz -o clash.gz
 ```
 
 Нужна другая архитектура? Посетите [страницу релизов MetaCubeX](https://github.com/MetaCubeX/mihomo/releases) и выберите ту, которая соответствует вашему устройству.
