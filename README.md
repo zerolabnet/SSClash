@@ -169,7 +169,7 @@ rm -rf /opt/clash
 
 # Extra Info (optional):
 
-1) To automatically update Clash rules when the Internet interface comes up:
+(1) To automatically update Clash rules when the Internet interface comes up:
 
 ## Create the Hotplug Script
 
@@ -224,7 +224,7 @@ done
 
 This script automatically updates rule providers whenever the Internet interface comes up, ensuring rules are refreshed after router reboots.
 
-2) If you use `proxy-providers`, to automatically update the proxy server IP addresses (which are excluded from the mangle chain) when subscriptions change:
+(2) If you use `proxy-providers`, to automatically update the proxy server IP addresses (which are excluded from the mangle chain) when subscriptions change:
 
 ## Create a cron job
 
