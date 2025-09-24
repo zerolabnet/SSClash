@@ -230,5 +230,5 @@ This script automatically updates rule providers whenever the Internet interface
 
 ```sh
 # Check and update every 30 minutes
-*/30 * * * * /opt/clash/clash-rules update >/dev/null 2>&1
+*/30 * * * * /opt/clash/bin/clash-rules update >/dev/null 2>&1
 ```

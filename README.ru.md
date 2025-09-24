@@ -231,5 +231,5 @@ done
 
 ```sh
 # Проверка и обновление каждые 30 минут
-*/30 * * * * /opt/clash/clash-rules update >/dev/null 2>&1
+*/30 * * * * /opt/clash/bin/clash-rules update >/dev/null 2>&1
 ```
