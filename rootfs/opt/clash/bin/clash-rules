@@ -9,9 +9,14 @@
 CONFIG_FILE="/opt/clash/config.yaml"
 SETTINGS_FILE="/opt/clash/settings"
 
+# Directory to cache subscription IPs for performance
+readonly SUBSCRIPTION_CACHE_FILE="/tmp/clash_subscription_ips.cache"
+# Lock file to prevent concurrent access to cache
+readonly SUBSCRIPTION_LOCK_FILE="/tmp/clash_subscription.lock"
+# Reserved networks
 readonly RESERVED_NETWORKS="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.2.0/24 192.88.99.0/24 192.168.0.0/16 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4 255.255.255.255/32"
 
-# --- Global Settings Variables ---
+# Global Settings Variables
 # These are populated by load_all_settings_once() to avoid repeated file reads.
 MODE="exclude"
 AUTO_DETECT_LAN="true"
@@ -49,7 +54,6 @@ load_all_settings_once() {
     done < "$SETTINGS_FILE"
 
     local settings_part=""
-
     [ -n "$MODE" ] && settings_part="$settings_part, Mode: $MODE"
     [ -n "$AUTO_DETECT_LAN" ] && settings_part="$settings_part, Auto-detect LAN: $AUTO_DETECT_LAN"
     [ -n "$AUTO_DETECT_WAN" ] && settings_part="$settings_part, Auto-detect WAN: $AUTO_DETECT_WAN"
@@ -94,6 +98,321 @@ resolve_domain() {
     fi
 }
 
+# Function to decode base64 using available utilities or pure shell fallback
+# Tries multiple methods: standard base64, busybox, openssl, pure shell
+decode_base64() {
+    local encoded="$1"
+
+    # Remove whitespace and newlines
+    encoded=$(echo "$encoded" | tr -d '\n\r \t')
+
+    # Check if string looks like valid base64
+    if ! echo "$encoded" | grep -qE '^[A-Za-z0-9+/]*={0,2}$'; then
+        msg "WARNING: String does not look like valid base64"
+        return 1
+    fi
+
+    # Try available utilities in order of efficiency
+
+    # Standard base64 (fastest)
+    if command -v base64 >/dev/null 2>&1; then
+        echo "$encoded" | base64 -d 2>/dev/null && return 0
+    fi
+
+    # BusyBox base64
+    if busybox base64 -d >/dev/null 2>&1; then
+        echo "$encoded" | busybox base64 -d 2>/dev/null && return 0
+    fi
+
+    # OpenSSL
+    if command -v openssl >/dev/null 2>&1; then
+        echo "$encoded" | openssl base64 -d -A 2>/dev/null && return 0
+    fi
+
+    # Pure shell fallback (slow but reliable)
+    msg "Using pure shell base64 decoder (this may be slow)"
+
+    # Helper function to convert base64 character to number
+    char_to_base64_num() {
+        local char="$1"
+        case "$char" in
+            A) echo 0 ;;  B) echo 1 ;;  C) echo 2 ;;  D) echo 3 ;;  E) echo 4 ;;  F) echo 5 ;;
+            G) echo 6 ;;  H) echo 7 ;;  I) echo 8 ;;  J) echo 9 ;;  K) echo 10 ;; L) echo 11 ;;
+            M) echo 12 ;; N) echo 13 ;; O) echo 14 ;; P) echo 15 ;; Q) echo 16 ;; R) echo 17 ;;
+            S) echo 18 ;; T) echo 19 ;; U) echo 20 ;; V) echo 21 ;; W) echo 22 ;; X) echo 23 ;;
+            Y) echo 24 ;; Z) echo 25 ;;
+            a) echo 26 ;; b) echo 27 ;; c) echo 28 ;; d) echo 29 ;; e) echo 30 ;; f) echo 31 ;;
+            g) echo 32 ;; h) echo 33 ;; i) echo 34 ;; j) echo 35 ;; k) echo 36 ;; l) echo 37 ;;
+            m) echo 38 ;; n) echo 39 ;; o) echo 40 ;; p) echo 41 ;; q) echo 42 ;; r) echo 43 ;;
+            s) echo 44 ;; t) echo 45 ;; u) echo 46 ;; v) echo 47 ;; w) echo 48 ;; x) echo 49 ;;
+            y) echo 50 ;; z) echo 51 ;;
+            0) echo 52 ;; 1) echo 53 ;; 2) echo 54 ;; 3) echo 55 ;; 4) echo 56 ;; 5) echo 57 ;;
+            6) echo 58 ;; 7) echo 59 ;; 8) echo 60 ;; 9) echo 61 ;;
+            +) echo 62 ;; /) echo 63 ;;
+            *) echo -1 ;;
+        esac
+    }
+
+    # Helper function to decode 4 base64 numbers into bytes
+    decode_base64_chunk() {
+        local n1=${1:-0} n2=${2:-0} n3=${3:-0} n4=${4:-0}
+
+        # First byte: first 6 bits from n1 + first 2 bits from n2
+        local byte1=$(( (n1 << 2) | (n2 >> 4) ))
+        printf "\\$(printf '%03o' $byte1)"
+
+        # Second byte if n3 exists
+        if [ "$3" ]; then
+            local byte2=$(( ((n2 & 15) << 4) | (n3 >> 2) ))
+            printf "\\$(printf '%03o' $byte2)"
+
+            # Third byte if n4 exists
+            if [ "$4" ]; then
+                local byte3=$(( ((n3 & 3) << 6) | n4 ))
+                printf "\\$(printf '%03o' $byte3)"
+            fi
+        fi
+    }
+
+    # Process encoded string in 4-character chunks
+    local i=0
+    local len=${#encoded}
+
+    while [ $i -lt $len ]; do
+        # Extract next 4 characters
+        local c1 c2 c3 c4
+        c1=$(echo "$encoded" | cut -c$((i+1)))
+        c2=$(echo "$encoded" | cut -c$((i+2)))
+        c3=$(echo "$encoded" | cut -c$((i+3)))
+        c4=$(echo "$encoded" | cut -c$((i+4)))
+
+        # Convert to numbers
+        local n1 n2 n3 n4
+        n1=$(char_to_base64_num "$c1")
+        n2=$(char_to_base64_num "$c2")
+        n3=$(char_to_base64_num "$c3")
+        n4=$(char_to_base64_num "$c4")
+
+        # Check for errors or padding
+        if [ "$n1" -eq -1 ] || [ "$n2" -eq -1 ]; then
+            break
+        fi
+
+        # Decode chunk
+        if [ "$n3" -eq -1 ]; then
+            decode_base64_chunk $n1 $n2
+            break
+        elif [ "$n4" -eq -1 ]; then
+            decode_base64_chunk $n1 $n2 $n3
+            break
+        else
+            decode_base64_chunk $n1 $n2 $n3 $n4
+        fi
+
+        i=$((i + 4))
+    done
+}
+
+# Function to extract proxy-providers configuration from config.yaml
+extract_proxy_providers() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        return 1
+    fi
+
+    # Extract proxy-providers section and parse it
+    awk '
+    /^proxy-providers:/ { in_providers = 1; next }
+    /^[a-zA-Z][^[:space:]]*:/ && !/^[[:space:]]/ {
+        if (in_providers) {
+            # Save previous provider if we have all required fields
+            if (provider && path && interval) {
+                print provider "|" path "|" interval
+            }
+            in_providers = 0
+        }
+    }
+    in_providers {
+        # Check for provider name
+        if (/^[[:space:]]*[^[:space:]]+.*:[[:space:]]*$/) {
+            # Save previous provider if we have all required fields
+            if (provider && path && interval) {
+                print provider "|" path "|" interval
+            }
+            # Start new provider - preserve Unicode characters
+            gsub(/^[[:space:]]*/, "")
+            gsub(/:.*/, "")
+            provider = $0
+            path = ""
+            interval = ""
+            next
+        }
+
+        # Extract path
+        if (/^[[:space:]]*path:[[:space:]]*/) {
+            gsub(/^[[:space:]]*path:[[:space:]]*/, "")
+            gsub(/[[:space:]]*$/, "")
+            gsub(/["'"'"']/, "")  # Remove quotes
+            sub(/#.*/, "")
+            path = $0
+            next
+        }
+
+        # Extract interval
+        if (/^[[:space:]]*interval:[[:space:]]*/) {
+            gsub(/^[[:space:]]*interval:[[:space:]]*/, "")
+            gsub(/[[:space:]]*$/, "")
+            sub(/#.*/, "")
+            interval = $0
+            next
+        }
+    }
+    END {
+        # Dont forget the last provider
+        if (provider && path && interval) {
+            print provider "|" path "|" interval
+        }
+    }
+    ' "$CONFIG_FILE"
+}
+
+# Function to get base directory for proxy-providers paths
+get_providers_base_dir() {
+    local config_dir=$(dirname "$CONFIG_FILE")
+    echo "$config_dir"
+}
+
+# Function to extract servers from a subscription file (base64 encoded, YAML or plain text with direct proxy URLs)
+extract_servers_from_subscription() {
+    local file_path="$1"
+
+    if [ ! -f "$file_path" ]; then
+        return 1
+    fi
+
+    # Read entire file content
+    local file_content=$(cat "$file_path")
+    local first_line=$(head -1 "$file_path")
+
+    # Check if file is entirely base64
+    if [ $(echo "$file_content" | wc -l) -eq 1 ] && echo "$first_line" | grep -qE '^[A-Za-z0-9+/=]+$' && [ ${#first_line} -gt 50 ]; then
+        msg "Processing single-line base64 file: $file_path"
+        local decoded_content=$(decode_base64 "$first_line")
+        if [ $? -eq 0 ] && [ -n "$decoded_content" ]; then
+            echo "$decoded_content" | while IFS= read -r line; do
+                case "$line" in
+                    vless://*|vmess://*|ss://*|trojan://*)
+                        server=$(echo "$line" | sed -n 's/.*@\([^:?]*\)[:?].*/\1/p')
+                        [ -n "$server" ] && echo "$server"
+                        ;;
+                esac
+            done
+        fi
+    # Check if file contains direct proxy URLs
+    elif grep -q "^vless://\|^vmess://\|^ss://\|^trojan://" "$file_path"; then
+        msg "Processing file with direct proxy URLs: $file_path"
+        grep -E "^vless://|^vmess://|^ss://|^trojan://" "$file_path" | while IFS= read -r line; do
+            case "$line" in
+                vless://*|vmess://*|ss://*|trojan://*)
+                    server=$(echo "$line" | sed -n 's/.*@\([^:?]*\)[:?].*/\1/p')
+                    [ -n "$server" ] && echo "$server"
+                    ;;
+            esac
+        done
+    else
+        # Process as regular YAML file
+        msg "Processing YAML file with proxies structure: $file_path"
+        awk '
+        /^proxies:/ { in_proxies = 1; next }
+        /^[a-zA-Z]/ && !/^ / { in_proxies = 0 }
+        in_proxies && /server:/ {
+            gsub(/^[[:space:]]*server:[[:space:]]*/, "")
+            gsub(/[[:space:]]*$/, "")
+            sub(/#.*/, "")
+            if ($0 != "" && $0 != "0.0.0.0") print $0
+        }
+        ' "$file_path"
+    fi
+}
+
+# Function to extract IP addresses from all subscription files
+extract_subscription_ips() {
+    local providers_info
+    local base_dir
+
+    providers_info=$(extract_proxy_providers)
+    if [ -z "$providers_info" ]; then
+        return 0
+    fi
+
+    base_dir=$(get_providers_base_dir)
+
+    echo "$providers_info" | while IFS='|' read -r provider_name path interval; do
+        [ -z "$provider_name" ] && continue
+
+        # Convert relative path to absolute path
+        case "$path" in
+            ./*) full_path="$base_dir/${path#./}" ;;
+            /*) full_path="$path" ;;
+            *) full_path="$base_dir/$path" ;;
+        esac
+
+        if [ -f "$full_path" ]; then
+            local subscription_servers=$(extract_servers_from_subscription "$full_path")
+            if [ -n "$subscription_servers" ]; then
+                echo "$subscription_servers" | while IFS= read -r server; do
+                    [ -z "$server" ] && continue
+                    if is_valid_ip "$server"; then
+                        echo "$server"
+                    else
+                        # Resolve domain to IP addresses
+                        local resolved_ips=$(resolve_domain "$server")
+                        if [ -n "$resolved_ips" ]; then
+                            echo "$resolved_ips"
+                        fi
+                    fi
+                done
+            fi
+        else
+            msg "WARNING: Subscription file not found: $full_path"
+        fi
+    done
+}
+
+# Function to create subscription IP cache with locking
+cache_subscription_ips() {
+    local lock_timeout=30
+    local lock_acquired=0
+
+    # Try to acquire lock
+    local lock_start=$(date +%s)
+    while [ $lock_acquired -eq 0 ]; do
+        if mkdir "$SUBSCRIPTION_LOCK_FILE" 2>/dev/null; then
+            lock_acquired=1
+            break
+        fi
+
+        local current_time=$(date +%s)
+        if [ $((current_time - lock_start)) -gt $lock_timeout ]; then
+            msg "WARNING: Could not acquire subscription lock, proceeding without cache"
+            return 1
+        fi
+
+        sleep 1
+    done
+
+    # Create cache
+    local cached_ips=$(extract_subscription_ips)
+    if [ -n "$cached_ips" ]; then
+        echo "$cached_ips" > "$SUBSCRIPTION_CACHE_FILE.tmp"
+        mv "$SUBSCRIPTION_CACHE_FILE.tmp" "$SUBSCRIPTION_CACHE_FILE"
+        msg "Subscription IPs cached successfully"
+    fi
+
+    # Release lock
+    rmdir "$SUBSCRIPTION_LOCK_FILE" 2>/dev/null
+    return 0
+}
+
 # Function to check if chain exists (iptables only)
 chain_exists() {
     local table="$1"
@@ -110,7 +429,7 @@ extract_fake_ip_config() {
     # Use awk to parse DNS section and extract both fake-ip-range and fake-ip-filter-mode
     awk '
     /^dns:/ { in_dns = 1; next }
-    /^[a-zA-Z]/ && !/^  / { in_dns = 0 }
+    /^[a-zA-Z]/ && !/^ / { in_dns = 0 }
     in_dns && /enable:/ {
         gsub(/^[[:space:]]*enable:[[:space:]]*/, "")
         gsub(/[[:space:]]*$/, "")
@@ -144,17 +463,20 @@ extract_fake_ip_config() {
     ' "$CONFIG_FILE"
 }
 
-# Extract server IPs from config.yaml
+# Function to extract server IPs from config.yaml (with subscription support)
 extract_server_ips() {
     if [ ! -f "$CONFIG_FILE" ]; then
         msg "ERROR: Config file not found: $CONFIG_FILE"
         return 1
     fi
 
-    # Extract servers using awk
-    local servers=$(awk '
+    local all_servers=""
+    local subscription_servers=""
+
+    # Extract servers from main proxies section
+    local config_servers=$(awk '
     /^proxies:/ { in_proxies = 1; next }
-    /^[a-zA-Z]/ && !/^  / { in_proxies = 0 }
+    /^[a-zA-Z]/ && !/^ / { in_proxies = 0 }
     in_proxies && /server:/ {
         gsub(/^[[:space:]]*server:[[:space:]]*/, "")
         gsub(/[[:space:]]*$/, "")
@@ -163,11 +485,45 @@ extract_server_ips() {
     }
     ' "$CONFIG_FILE")
 
-    # Process each server entry
-    if [ -n "$servers" ]; then
-        echo "$servers" | while IFS= read -r server; do
-            [ -z "$server" ] && continue
+    # Try to get subscription servers from cache first
+    if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
+        # Check if cache file is newer than 1 hour using find
+        if [ -n "$(find "$SUBSCRIPTION_CACHE_FILE" -mmin -60 2>/dev/null)" ]; then
+            subscription_servers=$(cat "$SUBSCRIPTION_CACHE_FILE")
+            msg "Using cached subscription IPs (fresh cache)"
+        else
+            msg "Subscription cache is stale, updating..."
+            subscription_servers=$(extract_subscription_ips)
+            # Update cache
+            if [ -n "$subscription_servers" ]; then
+                echo "$subscription_servers" > "$SUBSCRIPTION_CACHE_FILE"
+            fi
+        fi
+    else
+        msg "No subscription cache found, extracting subscription IPs..."
+        subscription_servers=$(extract_subscription_ips)
+        # Create cache
+        if [ -n "$subscription_servers" ]; then
+            mkdir -p "$(dirname "$SUBSCRIPTION_CACHE_FILE")"
+            echo "$subscription_servers" > "$SUBSCRIPTION_CACHE_FILE"
+        fi
+    fi
 
+    # Combine all servers
+    all_servers="$config_servers"
+    if [ -n "$subscription_servers" ]; then
+        if [ -n "$all_servers" ]; then
+            all_servers="$all_servers
+$subscription_servers"
+        else
+            all_servers="$subscription_servers"
+        fi
+    fi
+
+    # Process each server entry
+    if [ -n "$all_servers" ]; then
+        echo "$all_servers" | while IFS= read -r server; do
+            [ -z "$server" ] && continue
             if is_valid_ip "$server"; then
                 # It's already an IP address
                 echo "$server"
@@ -180,7 +536,7 @@ extract_server_ips() {
                     msg "WARNING: Could not resolve domain: $server"
                 fi
             fi
-        done
+        done | sort -u
     fi
 }
 
@@ -254,9 +610,9 @@ get_lan_interface() {
         for iface in $(get_all_interfaces); do
             # Check if it's a bridge
             if [ -d "/sys/class/net/$iface/bridge" ] || [ -d "/sys/class/net/$iface/brif" ]; then
-                 # Check IP address
-                 local ip=$(ip addr show "$iface" 2>/dev/null | awk '/inet / && !/127\./ {print $2}' | head -1)
-                 if [ -n "$ip" ]; then
+                # Check IP address
+                local ip=$(ip addr show "$iface" 2>/dev/null | awk '/inet / && !/127\./ {print $2}' | head -1)
+                if [ -n "$ip" ]; then
                     case "$ip" in
                         192.168.*|10.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
                             bridge="$iface"
@@ -264,7 +620,7 @@ get_lan_interface() {
                             break
                             ;;
                     esac
-                 fi
+                fi
             fi
         done
     fi
@@ -333,7 +689,6 @@ get_included_interfaces() {
 
     # Combine, de-duplicate, and return the final list
     combined_list="$auto_detected_list $user_selected_list"
-
     if [ -z "$combined_list" ]; then
         msg "ERROR: No interfaces specified for explicit mode"
         return 1
@@ -386,7 +741,6 @@ apply_nft_interface_exclusion_mangle() {
 apply_nft_explicit_interface_mangle() {
     local included_interfaces
     included_interfaces=$(get_included_interfaces) || return 1
-
     if [ -n "$included_interfaces" ]; then
         msg "Processing traffic from interfaces: $(echo "$included_interfaces" | tr '\n' ' ')"
         echo "$included_interfaces" | while IFS= read -r iface; do
@@ -507,6 +861,7 @@ apply_nft_output_rules() {
 
     # Apply interface exclusions for output traffic
     apply_nft_interface_exclusion_output "$excluded_interfaces"
+
     # Exclude already marked packets
     nft add rule inet clash output meta mark 0x0002 return
     nft add rule inet clash output meta mark and 0xff00 != 0 return
@@ -516,11 +871,13 @@ apply_nft_output_rules() {
         # Exclude DHCP traffic
         nft add rule inet clash output udp sport 67 udp dport 68 return
         nft add rule inet clash output udp sport 68 udp dport 67 return
+
         # Apply exclusions for reserved networks
         for network in $RESERVED_NETWORKS; do
             nft add rule inet clash output ip daddr "$network" return
             nft add rule inet clash output ip saddr "$network" return
         done
+
         # Apply server exclusions if provided
         if [ -n "$server_ips" ]; then
             echo "$server_ips" | while IFS= read -r ip; do
@@ -669,6 +1026,7 @@ apply_iptables_output_rules() {
 
     # Apply interface exclusions for output traffic
     apply_iptables_interface_exclusion_output "$excluded_interfaces"
+
     # Exclude already marked packets
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0x0002 -j RETURN
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0xff00/0xff00 -j RETURN
@@ -678,11 +1036,13 @@ apply_iptables_output_rules() {
         # Exclude DHCP traffic
         iptables -t mangle -I CLASH_LOCAL 1 -p udp --sport 67 --dport 68 -j RETURN
         iptables -t mangle -I CLASH_LOCAL 1 -p udp --sport 68 --dport 67 -j RETURN
+
         # Apply exclusions for reserved networks
         for network in $RESERVED_NETWORKS; do
             iptables -t mangle -A CLASH_LOCAL -d "$network" -j RETURN
             iptables -t mangle -A CLASH_LOCAL -s "$network" -j RETURN
         done
+
         # Apply server exclusions if provided
         if [ -n "$server_ips" ]; then
             echo "$server_ips" | while IFS= read -r ip; do
@@ -739,6 +1099,7 @@ apply_nft_rules() {
             local excluded_interfaces=$(get_excluded_interfaces)
             apply_nft_interface_exclusion_mangle "$excluded_interfaces"
             nft add rule inet clash mangle jump CLASH_MARK
+
             # In exclude mode, we also need to process locally generated traffic
             apply_nft_output_rules "$server_ips" "$excluded_interfaces" "$fake_ip_filter_mode" "$fake_ip_range"
             msg "nftables output rules applied (exclude mode)"
@@ -788,6 +1149,7 @@ apply_iptables_rules() {
             local excluded_interfaces=$(get_excluded_interfaces)
             apply_iptables_exclude_interface_rules "$excluded_interfaces"
             iptables -t mangle -A CLASH -j CLASH_PROCESS
+
             # In exclude mode, we also need to process locally generated traffic
             apply_iptables_output_rules "$server_ips" "$excluded_interfaces" "$fake_ip_filter_mode" "$fake_ip_range"
             msg "iptables output rules applied (exclude mode)"
@@ -813,7 +1175,6 @@ apply_iptables_rules() {
 
     # Hook the main chains into the system. This is the entry point.
     iptables -t mangle -A PREROUTING -j CLASH
-
     if [ "$MODE" != "explicit" ]; then
         iptables -t mangle -A OUTPUT -j CLASH_LOCAL
         msg "iptables rules applied successfully (exclude mode with output processing)"
@@ -824,6 +1185,13 @@ apply_iptables_rules() {
 
 start() {
     msg "Starting Clash rules script"
+
+    # Check if config file exists before proceeding
+    if [ ! -f "$CONFIG_FILE" ]; then
+        msg "ERROR: Clash config file not found: $CONFIG_FILE"
+        return 1
+    fi
+
     # Load all settings once from the file
     load_all_settings_once
 
@@ -881,6 +1249,7 @@ start() {
 
 stop() {
     msg "Stopping Clash rules script"
+
     # Load settings to know if QUIC rules need to be removed
     load_all_settings_once
 
@@ -894,7 +1263,6 @@ stop() {
             iptables -t filter -D INPUT -p udp --dport 443 -j REJECT 2>/dev/null
             iptables -t filter -D FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
         fi
-
         iptables -t mangle -D PREROUTING -j CLASH 2>/dev/null
         iptables -t mangle -F CLASH 2>/dev/null
         iptables -t mangle -X CLASH 2>/dev/null
@@ -914,6 +1282,7 @@ stop() {
     msg "Clash rules script stopped successfully"
 }
 
+# Intelligent update command with cache comparison and conditional reload
 case "$1" in
     start)
         start
@@ -921,8 +1290,48 @@ case "$1" in
     stop)
         stop
         ;;
+    restart)
+        stop
+        start
+        ;;
+    update)
+        msg "Updating subscription cache and reloading rules if needed"
+
+        # Save current cache checksum for comparison
+        old_checksum=""
+        if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
+            old_checksum=$(md5sum "$SUBSCRIPTION_CACHE_FILE" 2>/dev/null | cut -d' ' -f1)
+        fi
+
+        # Update subscription cache
+        cache_subscription_ips
+
+        # Check if cache actually changed
+        new_checksum=""
+        if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
+            new_checksum=$(md5sum "$SUBSCRIPTION_CACHE_FILE" 2>/dev/null | cut -d' ' -f1)
+        fi
+
+        # Reload rules only if cache changed and rules are currently active
+        if [ "$old_checksum" != "$new_checksum" ]; then
+            msg "Subscription IPs changed, reloading rules"
+            if hash nft 2>/dev/null && nft list table inet clash >/dev/null 2>&1; then
+                # Mark cache as fresh to avoid double parsing in start()
+                touch "$SUBSCRIPTION_CACHE_FILE"
+                stop && start
+            elif hash iptables 2>/dev/null && iptables -t mangle -L CLASH >/dev/null 2>&1; then
+                # Mark cache as fresh to avoid double parsing in start()
+                touch "$SUBSCRIPTION_CACHE_FILE"
+                stop && start
+            else
+                msg "No active rules found to reload"
+            fi
+        else
+            msg "Subscription IPs unchanged, no reload needed"
+        fi
+        ;;
     *)
-        echo "Usage: $0 {start|stop}"
+        echo "Usage: $0 {start|stop|restart|update}"
         exit 1
         ;;
 esac

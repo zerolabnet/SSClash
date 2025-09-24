@@ -30,8 +30,8 @@ opkg install kmod-nft-tproxy
 Загрузите пакет SSClash и установите его.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.9.1/luci-app-ssclash_2.9.1-r1_all.ipk -o /tmp/luci-app-ssclash_2.9.1-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_2.9.1-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.0.0/luci-app-ssclash_3.0.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.0.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_3.0.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -58,19 +58,19 @@ cd /opt/clash/bin
 Для архитектуры **amd64**:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-amd64-compatible-v1.19.12.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-amd64-compatible-v1.19.13.gz -o clash.gz
 ```
 
 Для архитектуры **arm64**:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-arm64-v1.19.12.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-arm64-v1.19.13.gz -o clash.gz
 ```
 
 Для архитектуры **mipsel\_24kc**:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-mipsle-softfloat-v1.19.12.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-mipsle-softfloat-v1.19.13.gz -o clash.gz
 ```
 
 Нужна другая архитектура? Посетите [страницу релизов MetaCubeX](https://github.com/MetaCubeX/mihomo/releases) и выберите ту, которая соответствует вашему устройству.
@@ -168,9 +168,9 @@ rm -rf /opt/clash
 ```
 
 
-# Дополнительная информация (необязательно): Автоматизация обновления правил Clash
+# Дополнительная информация (необязательно):
 
-Чтобы автоматически обновлять правила Clash при включении интернет-интерфейса:
+1) Чтобы автоматически обновлять правила Clash при включении интернет-интерфейса:
 
 ## Создайте скрипт Hotplug
 
@@ -224,3 +224,12 @@ done
 3. Сохраните и выйдите из редактора.
 
 Этот скрипт автоматически обновляет провайдеров правил всякий раз, когда включается интернет-интерфейс, обеспечивая обновление правил после перезагрузки роутера.
+
+2) Если вы используете `proxy-providers`, то для автоматического обновления IP-адресов прокси-серверов (исключаемых из цепочки mangle) при изменении подписок:
+
+## Создайте задачу в cron
+
+```sh
+# Проверка и обновление каждые 30 минут
+*/30 * * * * /opt/clash/clash-rules update >/dev/null 2>&1
+```

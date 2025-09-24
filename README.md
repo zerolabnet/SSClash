@@ -32,8 +32,8 @@ For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
 Download the SSClash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v2.9.1/luci-app-ssclash_2.9.1-r1_all.ipk -o /tmp/luci-app-ssclash_2.9.1-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_2.9.1-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.0.0/luci-app-ssclash_3.0.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.0.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_3.0.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -59,19 +59,19 @@ cd /opt/clash/bin
 For **amd64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-amd64-compatible-v1.19.12.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-amd64-compatible-v1.19.13.gz -o clash.gz
 ```
 
 For **arm64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-arm64-v1.19.12.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-arm64-v1.19.13.gz -o clash.gz
 ```
 
 For **mipsel_24kc** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-mipsle-softfloat-v1.19.12.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-mipsle-softfloat-v1.19.13.gz -o clash.gz
 ```
 
 Need a different architecture? Visit the [MetaCubeX Release Page](https://github.com/MetaCubeX/mihomo/releases) and choose the one that matches your device.
@@ -167,9 +167,9 @@ rm -rf /opt/clash
 
 ---
 
-# Extra Info (optional): Automating Clash Rules Update
+# Extra Info (optional):
 
-To automatically update Clash rules when the Internet interface comes up:
+1) To automatically update Clash rules when the Internet interface comes up:
 
 ## Create the Hotplug Script
 
@@ -223,3 +223,12 @@ done
 3. Save and exit the editor.
 
 This script automatically updates rule providers whenever the Internet interface comes up, ensuring rules are refreshed after router reboots.
+
+2) If you use `proxy-providers`, to automatically update the proxy server IP addresses (which are excluded from the mangle chain) when subscriptions change:
+
+## Create a cron job
+
+```sh
+# Check and update every 30 minutes
+*/30 * * * * /opt/clash/clash-rules update >/dev/null 2>&1
+```
