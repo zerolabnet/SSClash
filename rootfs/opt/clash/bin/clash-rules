@@ -10,9 +10,9 @@ CONFIG_FILE="/opt/clash/config.yaml"
 SETTINGS_FILE="/opt/clash/settings"
 
 # Directory to cache subscription IPs for performance
-readonly SUBSCRIPTION_CACHE_FILE="/tmp/clash_subscription_ips.cache"
+readonly SUBSCRIPTION_CACHE_FILE="/tmp/clash/clash_subscription_ips.cache"
 # Lock file to prevent concurrent access to cache
-readonly SUBSCRIPTION_LOCK_FILE="/tmp/clash_subscription.lock"
+readonly SUBSCRIPTION_LOCK_FILE="/tmp/clash/clash_subscription.lock"
 # Reserved networks
 readonly RESERVED_NETWORKS="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.2.0/24 192.88.99.0/24 192.168.0.0/16 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4 255.255.255.255/32"
 
@@ -959,9 +959,8 @@ apply_iptables_loop_prevention() {
 apply_iptables_reserved_networks() {
     for network in $RESERVED_NETWORKS; do
         iptables -t mangle -A CLASH_PROCESS -d "$network" -j RETURN
-        iptables -t mangle -A CLASH_PROCESS -s "$network" -j RETURN
     done
-    msg "Reserved networks excluded from proxy (both source and destination)"
+    msg "Reserved networks excluded from proxy (only destination)"
 }
 
 # For iptables - block QUIC traffic
@@ -1157,6 +1156,12 @@ apply_iptables_rules() {
     iptables -t mangle -N CLASH_LOCAL 2>/dev/null
     iptables -t mangle -N CLASH_PROCESS 2>/dev/null
 
+    # Exclude forwarded traffic (DNAT) from TPROXY to prevent conflicts.
+    # This ensures that incoming connections for port forwarding are not hijacked
+    # by the transparent proxy and can reach their internal destination.
+    iptables -t mangle -I CLASH 1 -m conntrack --ctstate DNAT -j RETURN
+    msg "DNAT traffic exclusion rule applied"
+
     # Apply rules based on the operation mode
     case "$MODE" in
         "explicit")
@@ -1243,8 +1248,18 @@ update_rules() {
         fi
     elif hash iptables 2>/dev/null; then
         # For iptables, find the difference and apply changes incrementally.
-        local ips_to_remove=$(comm -23 <(echo "$old_ips" | sort -u) <(echo "$new_ips" | sort -u))
-        local ips_to_add=$(comm -13 <(echo "$old_ips" | sort -u) <(echo "$new_ips" | sort -u))
+        # Create temporary files for comparison
+        local old_sorted="/tmp/clash/clash_old_ips.$$"
+        local new_sorted="/tmp/clash/clash_new_ips.$$"
+
+        echo "$old_ips" | sort -u > "$old_sorted"
+        echo "$new_ips" | sort -u > "$new_sorted"
+
+        local ips_to_remove=$(comm -23 "$old_sorted" "$new_sorted")
+        local ips_to_add=$(comm -13 "$old_sorted" "$new_sorted")
+
+        # Clean up temporary files
+        rm -f "$old_sorted" "$new_sorted"
 
         msg "Updating iptables rules..."
 
