@@ -126,7 +126,7 @@ return view.extend({
         const view = E([
             E('h2', _('Local Servers list')),
             E('p', { 'class': 'cbi-section-descr' }, 
-                _('Manage your local proxy servers. Add vless://, vmess://, trojan:// and other server links here.')),
+                _('Add proxy servers links to your local list without converting to Clash format. Add vless://, vmess://, trojan://, h2:// and others.')),
             helpSection,
             E('h3', _('Server Links Editor')),
             editorContainer,

@@ -466,8 +466,8 @@ msgstr "АВТО"
 msgid "Local Servers list"
 msgstr "Локальный список серверов"
 
-msgid "Manage your local proxy servers. Add vless://, vmess://, trojan:// and other server links here."
-msgstr "Управление локальными прокси-серверами. Добавляйте ссылки vless://, vmess://, trojan:// и другие здесь."
+msgid "Add proxy servers links to your local list without converting to Clash format. Add vless://, vmess://, trojan://, h2:// and others."
+msgstr "Добавляйте ссылки на прокси-серверы без конвертации в формат Clash. Поддерживаются vless://, vmess://, trojan://, h2 и другие."
 
 msgid "How to use"
 msgstr "Как использовать"
@@ -476,7 +476,7 @@ msgid "1. Paste your server links (vless://, vmess://, trojan://, etc.) directly
 msgstr "1. Вставьте ссылки на серверы (vless://, vmess://, trojan://, и т.д.) прямо в текстовое поле"
 
 msgid "2. Each server link should be on a separate line"
-msgstr "2. Каждая ссылка на сервер должна быть на отдельной строке"
+msgstr "2. Каждая ссылка на сервер отдельной строкой"
 
 msgid "3. Click \"Save\" to update your local server list"
 msgstr "3. Нажмите \"Сохранить\" для обновления списка локальных серверов"
@@ -492,21 +492,6 @@ msgstr "Сохранить серверы"
 
 msgid "Clear All"
 msgstr "Очистить все"
-
-msgid "Server Preview"
-msgstr "Предварительный просмотр серверов"
-
-msgid "No server links found. Add vless://, vmess://, trojan:// or other server links to see them here."
-msgstr "Ссылки на серверы не найдены. Добавьте vless://, vmess://, trojan:// или другие ссылки на серверы, чтобы увидеть их здесь."
-
-msgid "Detected Servers (%d)"
-msgstr "Обнаружено серверов (%d)"
-
-msgid "Line %d"
-msgstr "Строка %d"
-
-msgid "Editor not initialized."
-msgstr "Редактор не инициализирован."
 
 msgid "Local servers saved successfully!"
 msgstr "Локальные серверы успешно сохранены!"
