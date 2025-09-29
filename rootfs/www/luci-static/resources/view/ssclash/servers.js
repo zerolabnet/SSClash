@@ -4,7 +4,8 @@
 'require ui';
 
 let editor = null;
-const localServersPath = '/opt/clash/proxy_providers/local.txt';
+const localServersPath = '/opt/clash/proxy_providers_persistent/local.txt';
+const tmpfsPath = '/tmp/clash/proxy_providers/local.txt';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -47,7 +48,16 @@ async function handleSave() {
     try {
         const content = editor.getValue().trim();
         const finalContent = content ? content + '\n' : '';
-        await fs.write(localServersPath, finalContent);
+        
+        // Save to tmpfs first for immediate use by Clash
+        await fs.write(tmpfsPath, finalContent);
+        
+        // Then save to persistent storage for survival after reboot
+        try {
+            await fs.write(localServersPath, finalContent);
+        } catch (persistentError) {
+            console.warn('Failed to save to persistent storage:', persistentError);
+        }
         
         ui.addNotification(null, E('p', _('Local servers saved successfully!')), 'success');
         
@@ -95,6 +105,7 @@ function createHelpSection() {
 
 return view.extend({
     load: function() {
+        // Read directly from persistent storage
         return fs.read_direct(localServersPath)
             .then(content => content || '')
             .catch(err => {

@@ -70,8 +70,8 @@ define Package/$(PKG_NAME)/install
 
 	$(INSTALL_DIR) $(1)/opt/clash/lst
 
-	$(INSTALL_DIR) $(1)/opt/clash/proxy_providers
-	$(INSTALL_DATA) ./rootfs/opt/clash/proxy_providers/local.txt $(1)/opt/clash/proxy_providers/
+	$(INSTALL_DIR) $(1)/opt/clash/proxy_providers_persistent
+	$(INSTALL_DATA) ./rootfs/opt/clash/proxy_providers/local.txt $(1)/opt/clash/proxy_providers_persistent/
 
 	@if [ -f "$(PKG_BUILD_DIR)/po/ru/ssclash.lmo" ]; then \
 		$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n; \
