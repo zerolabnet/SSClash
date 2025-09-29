@@ -26,6 +26,14 @@
 			"path": "ssclash/settings"
 		}
 	},
+	"admin/services/ssclash/servers": {
+		"title": "Servers",
+		"order": 25,
+		"action": {
+			"type": "view",
+			"path": "ssclash/servers"
+		}
+	},
 	"admin/services/ssclash/rulesets": {
 		"title": "Rulesets",
 		"order": 30,

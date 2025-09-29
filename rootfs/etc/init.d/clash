@@ -69,6 +69,29 @@ setup_clash_directories() {
 		msg "Created symlink from '$PROXY_PROVIDERS_TMPFS' to '$PROXY_PROVIDERS_LINK'"
 	fi
 
+	# Copy local.txt from original location if it doesn't exist
+	if [ ! -f "$PROXY_PROVIDERS_TMPFS/local.txt" ]; then
+		if [ -f "${CLASH_DIR}/proxy_providers/local.txt" ]; then
+			if ! cp "${CLASH_DIR}/proxy_providers/local.txt" "$PROXY_PROVIDERS_TMPFS/local.txt"; then
+				msg "ERROR: Failed to copy local.txt file"
+				return 1
+			fi
+			msg "Copied local.txt file from original location"
+		else
+			# Create empty file as fallback
+			if ! touch "$PROXY_PROVIDERS_TMPFS/local.txt"; then
+				msg "ERROR: Failed to create local.txt file"
+				return 1
+			fi
+			msg "Created empty local.txt file"
+		fi
+	fi
+
+	# Set proper permissions for local.txt
+	if ! chmod 644 "$PROXY_PROVIDERS_TMPFS/local.txt"; then
+		msg "WARNING: Failed to set permissions for local.txt"
+	fi
+
 	return 0
 }
 

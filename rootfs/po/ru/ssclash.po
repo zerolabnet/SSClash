@@ -19,6 +19,9 @@ msgstr "Настройки"
 msgid "Rulesets"
 msgstr "Списки правил"
 
+msgid "Servers"
+msgstr "Серверы"
+
 msgid "Log"
 msgstr "Журнал"
 
@@ -457,3 +460,68 @@ msgstr "Перезапустите службу Clash после сохране�
 
 msgid "AUTO"
 msgstr "АВТО"
+
+### Модуль servers.js ###
+
+msgid "Local Servers list"
+msgstr "Локальный список серверов"
+
+msgid "Manage your local proxy servers. Add vless://, vmess://, trojan:// and other server links here."
+msgstr "Управление локальными прокси-серверами. Добавляйте ссылки vless://, vmess://, trojan:// и другие здесь."
+
+msgid "How to use"
+msgstr "Как использовать"
+
+msgid "1. Paste your server links (vless://, vmess://, trojan://, etc.) directly into the text area"
+msgstr "1. Вставьте ссылки на серверы (vless://, vmess://, trojan://, и т.д.) прямо в текстовое поле"
+
+msgid "2. Each server link should be on a separate line"
+msgstr "2. Каждая ссылка на сервер должна быть на отдельной строке"
+
+msgid "3. Click \"Save\" to update your local server list"
+msgstr "3. Нажмите \"Сохранить\" для обновления списка локальных серверов"
+
+msgid "4. The servers will be automatically available in the PROXY group"
+msgstr "4. Серверы автоматически станут доступны в группе PROXY"
+
+msgid "Server Links Editor"
+msgstr "Редактор ссылок на серверы"
+
+msgid "Save Servers"
+msgstr "Сохранить серверы"
+
+msgid "Clear All"
+msgstr "Очистить все"
+
+msgid "Server Preview"
+msgstr "Предварительный просмотр серверов"
+
+msgid "No server links found. Add vless://, vmess://, trojan:// or other server links to see them here."
+msgstr "Ссылки на серверы не найдены. Добавьте vless://, vmess://, trojan:// или другие ссылки на серверы, чтобы увидеть их здесь."
+
+msgid "Detected Servers (%d)"
+msgstr "Обнаружено серверов (%d)"
+
+msgid "Line %d"
+msgstr "Строка %d"
+
+msgid "Editor not initialized."
+msgstr "Редактор не инициализирован."
+
+msgid "Local servers saved successfully!"
+msgstr "Локальные серверы успешно сохранены!"
+
+msgid "Failed to save local servers: %s"
+msgstr "Не удалось сохранить локальные серверы: %s"
+
+msgid "Clear All Servers"
+msgstr "Очистить все серверы"
+
+msgid "Are you sure you want to clear all local servers? This action cannot be undone."
+msgstr "Вы уверены, что хотите очистить все локальные серверы? Это действие необратимо."
+
+msgid "Failed to clear servers: %s"
+msgstr "Не удалось очистить серверы: %s"
+
+msgid "Cannot read local servers file: %s"
+msgstr "Не удается прочитать файл локальных серверов: %s"

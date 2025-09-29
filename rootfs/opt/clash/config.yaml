@@ -87,6 +87,12 @@ proxies:
     client-fingerprint: chrome
 
 proxy-providers:
+  # Local servers provider
+  local:
+    type: file
+    path: ./proxy_providers/local.txt
+    format: text
+
   # Provider name
   provider1:
     type: http
@@ -111,7 +117,13 @@ proxy-groups:
   # Select (used for selecting proxy or proxy group)
   - name: PROXY
     type: select
-    # disable-udp: true
+    url: http://gstatic.com/generate_204
+    expected-status: 204
+    interval: 300
+    lazy: true
+    icon: https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/WiFi.png
+    use:
+      - local
     proxies: [XX-reality, YY-reality] # change it, add the others
 
   # Fallback
