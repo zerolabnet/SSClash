@@ -1,0 +1,1 @@
+vless://test@example.com:443?security=tls#Test-Server
