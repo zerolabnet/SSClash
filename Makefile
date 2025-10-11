@@ -4,7 +4,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ssclash
-PKG_VERSION:=3.2.0
+PKG_VERSION:=3.3.2
 PKG_RELEASE:=1
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
@@ -52,6 +52,7 @@ define Package/$(PKG_NAME)/install
 
 	$(INSTALL_DIR) $(1)/opt/clash/bin
 	$(INSTALL_BIN) ./rootfs/opt/clash/bin/clash-rules $(1)/opt/clash/bin/
+	$(INSTALL_BIN) ./rootfs/opt/clash/bin/clash $(1)/opt/clash/bin/
 
 	$(INSTALL_DIR) $(1)/opt/clash
 	$(INSTALL_DATA) ./rootfs/opt/clash/config.yaml $(1)/opt/clash/
@@ -71,7 +72,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/opt/clash/lst
 
 	$(INSTALL_DIR) $(1)/opt/clash/proxy_providers_persistent
-	$(INSTALL_DATA) ./rootfs/opt/clash/proxy_providers/local.txt $(1)/opt/clash/proxy_providers_persistent/
+	$(INSTALL_DATA) ./rootfs/opt/clash/proxy_providers/local.yaml $(1)/opt/clash/proxy_providers_persistent/
 
 	@if [ -f "$(PKG_BUILD_DIR)/po/ru/ssclash.lmo" ]; then \
 		$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n; \

@@ -11,6 +11,7 @@ RULESET_TMPFS="/tmp/clash/ruleset"
 RULESET_LINK="${CLASH_DIR}/ruleset"
 PROXY_PROVIDERS_TMPFS="/tmp/clash/proxy_providers"
 PROXY_PROVIDERS_LINK="${CLASH_DIR}/proxy_providers"
+PROXY_PROVIDERS_PERSISTENT="/opt/clash/proxy_providers_persistent"
 
 # Function to log messages
 msg() {
@@ -69,27 +70,66 @@ setup_clash_directories() {
 		msg "Created symlink from '$PROXY_PROVIDERS_TMPFS' to '$PROXY_PROVIDERS_LINK'"
 	fi
 
-	# Copy local.txt from original location if it doesn't exist
-	if [ ! -f "$PROXY_PROVIDERS_TMPFS/local.txt" ]; then
-		if [ -f "${CLASH_DIR}/proxy_providers/local.txt" ]; then
-			if ! cp "${CLASH_DIR}/proxy_providers/local.txt" "$PROXY_PROVIDERS_TMPFS/local.txt"; then
-				msg "ERROR: Failed to copy local.txt file"
+	# Ensure persistent directory exists
+	if [ ! -d "$PROXY_PROVIDERS_PERSISTENT" ]; then
+		# Ensure parent directory exists first
+		if [ ! -d "${CLASH_DIR}" ]; then
+			if ! mkdir -p "${CLASH_DIR}"; then
+				msg "ERROR: Failed to create clash directory"
 				return 1
 			fi
-			msg "Copied local.txt file from original location"
-		else
-			# Create empty file as fallback
-			if ! touch "$PROXY_PROVIDERS_TMPFS/local.txt"; then
-				msg "ERROR: Failed to create local.txt file"
-				return 1
-			fi
-			msg "Created empty local.txt file"
 		fi
+		if ! mkdir -p "$PROXY_PROVIDERS_PERSISTENT"; then
+			msg "ERROR: Failed to create persistent proxy_providers directory"
+			return 1
+		fi
+		msg "Created persistent proxy_providers directory"
 	fi
 
-	# Set proper permissions for local.txt
-	if ! chmod 644 "$PROXY_PROVIDERS_TMPFS/local.txt"; then
-		msg "WARNING: Failed to set permissions for local.txt"
+	# Always copy local.yaml from persistent storage to tmpfs (overwrite if exists)
+	if [ -f "$PROXY_PROVIDERS_PERSISTENT/local.yaml" ]; then
+		if ! cp "$PROXY_PROVIDERS_PERSISTENT/local.yaml" "$PROXY_PROVIDERS_TMPFS/local.yaml"; then
+			msg "ERROR: Failed to copy local.yaml file"
+			return 1
+		fi
+		msg "Copied local.yaml file from persistent storage"
+	else
+		# Create empty file in both locations if persistent file doesn't exist
+		if ! touch "$PROXY_PROVIDERS_PERSISTENT/local.yaml"; then
+			msg "ERROR: Failed to create persistent local.yaml file"
+			return 1
+		fi
+		# Set permissions and ownership immediately after creation
+		if ! chmod 666 "$PROXY_PROVIDERS_PERSISTENT/local.yaml"; then
+			msg "WARNING: Failed to set permissions for persistent local.yaml"
+		fi
+		# Try to change ownership to www-data (common web server user)
+		if command -v chown >/dev/null 2>&1; then
+			if ! chown www-data:www-data "$PROXY_PROVIDERS_PERSISTENT/local.yaml" 2>/dev/null; then
+				# Fallback to nobody if www-data doesn't exist
+				chown nobody:nobody "$PROXY_PROVIDERS_PERSISTENT/local.yaml" 2>/dev/null || true
+			fi
+		fi
+		if ! cp "$PROXY_PROVIDERS_PERSISTENT/local.yaml" "$PROXY_PROVIDERS_TMPFS/local.yaml"; then
+			msg "ERROR: Failed to copy empty local.yaml to tmpfs"
+			return 1
+		fi
+		msg "Created empty local.yaml file in both locations"
+	fi
+
+	# Set proper permissions for local.yaml in both locations
+	if ! chmod 644 "$PROXY_PROVIDERS_TMPFS/local.yaml"; then
+		msg "WARNING: Failed to set permissions for tmpfs local.yaml"
+	fi
+	if ! chmod 666 "$PROXY_PROVIDERS_PERSISTENT/local.yaml"; then
+		msg "WARNING: Failed to set permissions for persistent local.yaml"
+	fi
+	# Try to change ownership of persistent file to web server user
+	if command -v chown >/dev/null 2>&1; then
+		if ! chown www-data:www-data "$PROXY_PROVIDERS_PERSISTENT/local.yaml" 2>/dev/null; then
+			# Fallback to nobody if www-data doesn't exist
+			chown nobody:nobody "$PROXY_PROVIDERS_PERSISTENT/local.yaml" 2>/dev/null || true
+		fi
 	fi
 
 	return 0

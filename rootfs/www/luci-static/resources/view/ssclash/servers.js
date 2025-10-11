@@ -4,8 +4,8 @@
 'require ui';
 
 let editor = null;
-const localServersPath = '/opt/clash/proxy_providers_persistent/local.txt';
-const tmpfsPath = '/tmp/clash/proxy_providers/local.txt';
+const localServersPath = '/opt/clash/proxy_providers_persistent/local.yaml';
+const tmpfsPath = '/tmp/clash/proxy_providers/local.yaml';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
