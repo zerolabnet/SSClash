@@ -1107,6 +1107,9 @@ apply_nft_rules() {
         msg "Populated proxy_servers set with $(echo "$server_ips" | wc -l | xargs) IPs."
     fi
 
+    nft add rule inet clash mangle ct status dnat return
+    msg "DNAT traffic exclusion rule applied"
+
     case "$MODE" in
         "explicit")
             apply_nft_explicit_interface_mangle || return 1
