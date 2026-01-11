@@ -65,8 +65,14 @@ jobs:
           ln -s "${{ github.workspace }}" "package/$PACKAGE_NAME"
           make defconfig > /dev/null 2>&1
           make package/${PACKAGE_NAME}/compile V=s
-          find "$SDK_HOME/bin" -type f -name "${PACKAGE_NAME}_*.${{ matrix.pkg_format }}" \
-           -exec cp -f {} "${{ github.workspace }}" \;
+          
+          # Find and copy all packages (handles both naming conventions)
+          find "$SDK_HOME/bin" -type f \( -name "${PACKAGE_NAME}_*.${{ matrix.pkg_format }}" -o -name "${PACKAGE_NAME}-*.${{ matrix.pkg_format }}" \) \
+           -exec cp -v -f {} "${{ github.workspace }}" \;
+          
+          # List copied files
+          echo "Copied packages:"
+          ls -lah "${{ github.workspace }}"/*.${{ matrix.pkg_format }}
            
       - name: Generate Release Notes
         run: |
