@@ -9,24 +9,39 @@ on:
         description: 'Release Tag (v1.x.x)'
         required: true
         type: string
+
 jobs:
   release:
     name: Build and Release
     runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - version: "24.10.2"
+            pkg_format: "ipk"
+            arch: "x86/64"
+          - version: "25.12.0-rc2"
+            pkg_format: "apk"
+            arch: "x86/64"
+    
     env:
       PACKAGE_NAME: luci-app-ssclash
-      SDK_URL_PATH: https://downloads.openwrt.org/releases/24.10.2/targets/x86/64/
+      SDK_URL_PATH: https://downloads.openwrt.org/releases/${{ matrix.version }}/targets/${{ matrix.arch }}/
       SDK_NAME: -sdk-
+      
     steps:
       - uses: actions/checkout@v4
+      
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -yq gettext libncurses5-dev rsync xsltproc build-essential gawk unzip
+          
       - name: Create Directories
         run: |
           echo "SDK_DL_DIR=$(mktemp -d)" >> $GITHUB_ENV
           echo "SDK_HOME=$(mktemp -d)" >> $GITHUB_ENV
+          
       - name: Prepare Build Environment
         run: |
           cd "$SDK_DL_DIR"
@@ -41,6 +56,7 @@ jobs:
             exit 1
           fi
           tar --zstd -xf "$SDK_DL_DIR/$SDK_FILE" -C "$SDK_HOME" --strip=1
+          
       - name: Build Packages
         run: |
           cd "$SDK_HOME"
@@ -49,20 +65,61 @@ jobs:
           ln -s "${{ github.workspace }}" "package/$PACKAGE_NAME"
           make defconfig > /dev/null 2>&1
           make package/${PACKAGE_NAME}/compile V=s
-          find "$SDK_HOME/bin" -type f -name "${PACKAGE_NAME}_*.ipk" \
+          find "$SDK_HOME/bin" -type f -name "${PACKAGE_NAME}_*.${{ matrix.pkg_format }}" \
            -exec cp -f {} "${{ github.workspace }}" \;
+           
       - name: Generate Release Notes
+        run: |
+          echo "## Release ${{ github.event.inputs.release-tag }}" > release_notes_${{ matrix.version }}.md
+          echo "" >> release_notes_${{ matrix.version }}.md
+          echo "### OpenWrt ${{ matrix.version }} - ${{ matrix.pkg_format }} packages" >> release_notes_${{ matrix.version }}.md
+          echo "- Built with OpenWrt SDK ${{ matrix.version }}" >> release_notes_${{ matrix.version }}.md
+          echo "- Package format: ${{ matrix.pkg_format }}" >> release_notes_${{ matrix.version }}.md
+          echo "- Build date: $(date)" >> release_notes_${{ matrix.version }}.md
+          
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.version }}-${{ matrix.pkg_format }}
+          path: "*.${{ matrix.pkg_format }}"
+          retention-days: 1
+          
+  create-release:
+    name: Create Release
+    needs: release
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          
+      - name: Prepare release files
+        run: |
+          mkdir -p release_files
+          find artifacts -type f \( -name "*.ipk" -o -name "*.apk" \) -exec cp {} release_files/ \;
+          ls -lah release_files/
+          
+      - name: Generate Combined Release Notes
         run: |
           echo "## Release ${{ github.event.inputs.release-tag }}" > release_notes.md
           echo "" >> release_notes.md
-          echo "### Changes" >> release_notes.md
-          echo "- Built with OpenWrt SDK 24.10.2" >> release_notes.md
-          echo "- Architecture independent package" >> release_notes.md
+          echo "### Packages" >> release_notes.md
+          echo "- **IPK packages** for OpenWrt 24.10.x (opkg)" >> release_notes.md
+          echo "- **APK packages** for OpenWrt 25.12.x (apk package manager)" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Build Information" >> release_notes.md
           echo "- Build date: $(date)" >> release_notes.md
+          echo "- Supported architectures: x86/64" >> release_notes.md
+          
       - name: Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: "*.ipk"
+          files: release_files/*
           tag_name: ${{ github.event.inputs.release-tag }}
           body_path: release_notes.md
           draft: false
