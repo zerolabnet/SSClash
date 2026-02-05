@@ -457,3 +457,29 @@ msgstr "Перезапустите службу Clash после сохране�
 
 msgid "AUTO"
 msgstr "АВТО"
+
+### HWID-заголовки ###
+
+msgid "Add HWID headers to subscriptions"
+msgstr "Добавить HWID-заголовки к подпискам"
+
+msgid "Automatically adds HWID headers to proxy-providers for device tracking (Remnawave compatibility)."
+msgstr "Автоматически добавляет HWID-заголовки к proxy-providers для отслеживания устройства (совместимость с Remnawave)."
+
+msgid "User-Agent"
+msgstr "User-Agent"
+
+msgid "Application identifier sent in HTTP headers"
+msgstr "Идентификатор приложения в HTTP-заголовках"
+
+msgid "Device OS"
+msgstr "ОС устройства"
+
+msgid "Operating system name sent in headers"
+msgstr "Имя операционной системы в заголовках"
+
+msgid "Auto-generated values:"
+msgstr "Автоматически генерируемые значения:"
+
+msgid "Adding HWID headers to configuration..."
+msgstr "Добавление HWID-заголовков в конфигурацию..."

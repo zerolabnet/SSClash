@@ -155,7 +155,10 @@ async function loadSettings() {
             detectedLan: '',
             detectedWan: '',
             includedInterfaces: [],
-            excludedInterfaces: []
+            excludedInterfaces: [],
+            enableHwid: false,
+            hwidUserAgent: 'SSClash',
+            hwidDeviceOS: 'OpenWrt'
         };
 
         content.split('\n').forEach(line => {
@@ -174,6 +177,15 @@ async function loadSettings() {
                     case 'EXCLUDED_INTERFACES':
                         settings.excludedInterfaces = value.trim() ? value.trim().split(',').map(i => i.trim()) : [];
                         break;
+                    case 'ENABLE_HWID':
+                        settings.enableHwid = value.trim() === 'true';
+                        break;
+                    case 'HWID_USER_AGENT':
+                        settings.hwidUserAgent = value.trim();
+                        break;
+                    case 'HWID_DEVICE_OS':
+                        settings.hwidDeviceOS = value.trim();
+                        break;
                 }
             }
         });
@@ -188,7 +200,10 @@ async function loadSettings() {
             detectedLan: '',
             detectedWan: '',
             includedInterfaces: [],
-            excludedInterfaces: []
+            excludedInterfaces: [],
+            enableHwid: false,
+            hwidUserAgent: 'SSClash',
+            hwidDeviceOS: 'OpenWrt'
         };
     }
 }
@@ -210,7 +225,7 @@ async function loadInterfacesByMode(mode) {
     }
 }
 
-async function saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, interfaces) {
+async function saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, interfaces, enableHwid, hwidUserAgent, hwidDeviceOS) {
     try {
         let detectedLan = '';
         let detectedWan = '';
@@ -242,6 +257,9 @@ DETECTED_LAN=${detectedLan}
 DETECTED_WAN=${detectedWan}
 INCLUDED_INTERFACES=${includedInterfaces.join(',')}
 EXCLUDED_INTERFACES=${excludedInterfaces.join(',')}
+ENABLE_HWID=${enableHwid}
+HWID_USER_AGENT=${hwidUserAgent}
+HWID_DEVICE_OS=${hwidDeviceOS}
 `;
 
         await fs.write('/opt/clash/settings', settingsContent);
@@ -884,7 +902,7 @@ function createInterfaceSelector(interfaces, selectedInterfaces, currentMode) {
     return container;
 }
 
-function createAdditionalSettings(blockQuic) {
+function createAdditionalSettings(blockQuic, enableHwid, hwidUserAgent, hwidDeviceOS) {
     const container = E('div', { 'class': 'cbi-section' });
 
     container.appendChild(E('h3', _('Additional Settings')));
@@ -911,6 +929,92 @@ function createAdditionalSettings(blockQuic) {
     setTimeout(() => {
         blockQuicCheckbox.checked = blockQuic;
     }, 0);
+
+    const hwidCheckbox = E('input', {
+        'type': 'checkbox',
+        'id': 'enable_hwid'
+    });
+
+    const hwidLabel = E('label', {
+        'for': 'enable_hwid',
+        'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; cursor: pointer;'
+    }, [
+        hwidCheckbox,
+        E('span', '🔑 ' + _('Add HWID headers to subscriptions'))
+    ]);
+
+    settingsContainer.appendChild(hwidLabel);
+    settingsContainer.appendChild(E('div', { 'class': 'cbi-section-descr', 'style': 'font-size: 12px; margin-bottom: 10px;' },
+        _('Automatically adds HWID headers to proxy-providers for device tracking (Remnawave compatibility).')));
+
+    const hwidAdvancedContainer = E('div', {
+        'id': 'hwid_advanced',
+        'style': 'display: none; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fff;'
+    });
+
+    const userAgentContainer = E('div', {
+        'style': 'margin-bottom: 15px;'
+    });
+    const userAgentLabel = E('label', {
+        'for': 'hwid_user_agent',
+        'style': 'display: block; font-weight: bold; margin-bottom: 5px;'
+    }, _('User-Agent'));
+    const userAgentInput = E('input', {
+        'type': 'text',
+        'id': 'hwid_user_agent',
+        'class': 'cbi-input-text',
+        'value': hwidUserAgent || 'SSClash',
+        'placeholder': 'SSClash'
+    });
+    const userAgentDesc = E('div', {
+        'style': 'font-size: 11px; color: #666; margin-top: 5px;'
+    }, _('Application identifier sent in HTTP headers'));
+
+    userAgentContainer.appendChild(userAgentLabel);
+    userAgentContainer.appendChild(userAgentInput);
+    userAgentContainer.appendChild(userAgentDesc);
+
+    const deviceOsContainer = E('div', {
+        'style': 'margin-bottom: 15px;'
+    });
+    const deviceOsLabel = E('label', {
+        'for': 'hwid_device_os',
+        'style': 'display: block; font-weight: bold; margin-bottom: 5px;'
+    }, _('Device OS'));
+    const deviceOsInput = E('input', {
+        'type': 'text',
+        'id': 'hwid_device_os',
+        'class': 'cbi-input-text',
+        'value': hwidDeviceOS || 'OpenWrt',
+        'placeholder': 'OpenWrt'
+    });
+    const deviceOsDesc = E('div', {
+        'style': 'font-size: 11px; color: #666; margin-top: 5px;'
+    }, _('Operating system name sent in headers'));
+
+    deviceOsContainer.appendChild(deviceOsLabel);
+    deviceOsContainer.appendChild(deviceOsInput);
+    deviceOsContainer.appendChild(deviceOsDesc);
+
+    hwidAdvancedContainer.appendChild(userAgentContainer);
+    hwidAdvancedContainer.appendChild(deviceOsContainer);
+
+    settingsContainer.appendChild(hwidAdvancedContainer);
+
+    setTimeout(() => {
+        hwidCheckbox.checked = enableHwid;
+        if (enableHwid) {
+            hwidAdvancedContainer.style.display = 'block';
+        }
+    }, 0);
+
+    hwidCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            hwidAdvancedContainer.style.display = 'block';
+        } else {
+            hwidAdvancedContainer.style.display = 'none';
+        }
+    });
 
     container.appendChild(settingsContainer);
     return container;
@@ -1015,7 +1119,12 @@ return view.extend({
         const modeSelector = createModeSelector(settings.mode);
         const autoDetectOptions = createAutoDetectOptions(settings.mode, settings.autoDetectLan, settings.autoDetectWan);
         const interfaceSelector = createInterfaceSelector(interfaces, selectedInterfaces, settings.mode);
-        const additionalSettings = createAdditionalSettings(settings.blockQuic);
+        const additionalSettings = createAdditionalSettings(
+            settings.blockQuic,
+            settings.enableHwid,
+            settings.hwidUserAgent,
+            settings.hwidDeviceOS
+        );
         const kernelDownloadSection = createKernelDownloadSection();
 
         const downloadButton = E('button', {
@@ -1125,6 +1234,9 @@ return view.extend({
                 const autoDetectLan = autoDetectOptions.querySelector('#auto_detect_lan').checked;
                 const autoDetectWan = autoDetectOptions.querySelector('#auto_detect_wan').checked;
                 const blockQuic = additionalSettings.querySelector('#block_quic').checked;
+                const enableHwid = additionalSettings.querySelector('#enable_hwid')?.checked || false;
+                const hwidUserAgent = additionalSettings.querySelector('#hwid_user_agent')?.value || 'SSClash';
+                const hwidDeviceOS = additionalSettings.querySelector('#hwid_device_os')?.value || 'OpenWrt';
 
                 const selected = [];
                 const checkboxes = interfaceSelector.querySelectorAll('input[type="checkbox"]:checked');
@@ -1132,7 +1244,17 @@ return view.extend({
                     selected.push(cb.value);
                 });
 
-                const success = await saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, selected);
+                const success = await saveSettings(
+                    mode,
+                    autoDetectLan,
+                    autoDetectWan,
+                    blockQuic,
+                    selected,
+                    enableHwid,
+                    hwidUserAgent,
+                    hwidDeviceOS
+                );
+
                 if (success) {
                     updateCurrentStatus(mode, autoDetectLan, autoDetectWan, selected, detectedLanBridge, detectedWanInterface);
                 }

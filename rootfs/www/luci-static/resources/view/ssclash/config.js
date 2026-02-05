@@ -14,6 +14,181 @@ const callServiceList = rpc.declare({
     expect: { '': {} }
 });
 
+async function getHwidSettings() {
+    try {
+        const content = await L.resolveDefault(fs.read('/opt/clash/settings'), '');
+        const settings = {
+            enableHwid: false,
+            hwidUserAgent: 'SSClash',
+            hwidDeviceOS: 'OpenWrt'
+        };
+
+        content.split('\n').forEach(line => {
+            const [key, value] = line.split('=');
+            if (key && value) {
+                switch(key.trim()) {
+                    case 'ENABLE_HWID':
+                        settings.enableHwid = value.trim() === 'true';
+                        break;
+                    case 'HWID_USER_AGENT':
+                        settings.hwidUserAgent = value.trim();
+                        break;
+                    case 'HWID_DEVICE_OS':
+                        settings.hwidDeviceOS = value.trim();
+                        break;
+                }
+            }
+        });
+
+        return settings;
+    } catch (e) {
+        return {
+            enableHwid: false,
+            hwidUserAgent: 'SSClash',
+            hwidDeviceOS: 'OpenWrt'
+        };
+    }
+}
+
+async function getHwidValues() {
+    try {
+        let hwid = 'unknown';
+        try {
+            const macResult = await fs.exec('/bin/sh', ['-c',
+                "cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | md5sum | cut -c1-14"
+            ]);
+            if (macResult.code === 0 && macResult.stdout) {
+                hwid = macResult.stdout.trim();
+            }
+        } catch (e) {}
+
+        let verOs = 'unknown';
+        try {
+            const verResult = await fs.exec('/bin/sh', ['-c',
+                ". /etc/openwrt_release && echo $DISTRIB_RELEASE"
+            ]);
+            if (verResult.code === 0 && verResult.stdout) {
+                verOs = verResult.stdout.trim();
+            }
+        } catch (e) {}
+
+        let deviceModel = 'Router';
+        try {
+            const modelResult = await fs.exec('/bin/sh', ['-c',
+                "cat /tmp/sysinfo/model 2>/dev/null"
+            ]);
+            if (modelResult.code === 0 && modelResult.stdout) {
+                deviceModel = modelResult.stdout.trim();
+            }
+        } catch (e) {}
+
+        return { hwid, verOs, deviceModel };
+    } catch (e) {
+        return {
+            hwid: 'unknown',
+            verOs: 'unknown',
+            deviceModel: 'Router'
+        };
+    }
+}
+
+function addHwidToYaml(yamlContent, userAgent, deviceOS, hwid, verOs, deviceModel) {
+    const lines = yamlContent.split('\n');
+    const result = [];
+    let inProxyProviders = false;
+    let inProvider = false;
+    let currentProvider = [];
+    let hasHeader = false;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        if (line.match(/^proxy-providers:\s*$/)) {
+            inProxyProviders = true;
+            result.push(line);
+            continue;
+        }
+
+        if (inProxyProviders) {
+            if (line.match(/^[a-zA-Z]/)) {
+                if (inProvider) {
+                    result.push(...currentProvider);
+                    if (!hasHeader) {
+                        while (result.length > 0 && result[result.length - 1].trim() === '') {
+                            result.pop();
+                        }
+                        result.push('    header:');
+                        result.push(`      User-Agent: [${userAgent}]`);
+                        result.push(`      x-hwid: [${hwid}]`);
+                        result.push(`      x-device-os: [${deviceOS}]`);
+                        result.push(`      x-ver-os: [${verOs}]`);
+                        result.push(`      x-device-model: [${deviceModel}]`);
+                        result.push('');
+                    }
+                }
+                inProxyProviders = false;
+                inProvider = false;
+                result.push(line);
+                continue;
+            }
+
+            const providerMatch = line.match(/^  ([a-zA-Z0-9_-]+):\s*$/);
+            if (providerMatch) {
+                if (inProvider) {
+                    result.push(...currentProvider);
+                    if (!hasHeader) {
+                        while (result.length > 0 && result[result.length - 1].trim() === '') {
+                            result.pop();
+                        }
+                        result.push('    header:');
+                        result.push(`      User-Agent: [${userAgent}]`);
+                        result.push(`      x-hwid: [${hwid}]`);
+                        result.push(`      x-device-os: [${deviceOS}]`);
+                        result.push(`      x-ver-os: [${verOs}]`);
+                        result.push(`      x-device-model: [${deviceModel}]`);
+                        result.push('');
+                    }
+                }
+
+                currentProvider = [line];
+                inProvider = true;
+                hasHeader = false;
+                continue;
+            }
+
+            if (inProvider && line.match(/^    header:\s*$/)) {
+                hasHeader = true;
+            }
+
+            if (inProvider) {
+                currentProvider.push(line);
+            } else {
+                result.push(line);
+            }
+        } else {
+            result.push(line);
+        }
+    }
+
+    if (inProvider) {
+        result.push(...currentProvider);
+        if (!hasHeader) {
+            while (result.length > 0 && result[result.length - 1].trim() === '') {
+                result.pop();
+            }
+            result.push('    header:');
+            result.push(`      User-Agent: [${userAgent}]`);
+            result.push(`      x-hwid: [${hwid}]`);
+            result.push(`      x-device-os: [${deviceOS}]`);
+            result.push(`      x-ver-os: [${verOs}]`);
+            result.push(`      x-device-model: [${deviceModel}]`);
+            result.push('');
+        }
+    }
+
+    return result.join('\n');
+}
+
 async function getServiceStatus() {
     try {
         const instances = (await callServiceList('clash'))['clash']?.instances;
@@ -171,14 +346,35 @@ return view.extend({
     },
     render: async function(config) {
         const running = await getServiceStatus();
+
         const saveAndApply = async function() {
             if (startStopButton) startStopButton.disabled = true;
             try {
-                const value = editor.getValue().trim() + '\n';
+                let value = editor.getValue().trim() + '\n';
+
+                const hwidSettings = await getHwidSettings();
+
+                if (hwidSettings.enableHwid) {
+                    ui.addNotification(null, E('p', _('Adding HWID headers to configuration...')), 'info');
+
+                    const hwidValues = await getHwidValues();
+
+                    value = addHwidToYaml(
+                        value,
+                        hwidSettings.hwidUserAgent,
+                        hwidSettings.hwidDeviceOS,
+                        hwidValues.hwid,
+                        hwidValues.verOs,
+                        hwidValues.deviceModel
+                    );
+                }
+
                 await fs.write('/opt/clash/config.yaml', value);
                 ui.addNotification(null, E('p', _('Configuration saved successfully.')), 'info');
+
                 await fs.exec('/etc/init.d/clash', ['reload']);
                 ui.addNotification(null, E('p', _('Service reloaded successfully.')), 'info');
+
                 await pollStatus(true);
                 window.location.reload();
             } catch(e) {

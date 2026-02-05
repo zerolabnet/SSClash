@@ -13,10 +13,17 @@
                 "/proc/net/route": [ "read" ],
                 "/sys/class/net": [ "list" ],
                 "/sys/class/net/*": [ "list", "read" ],
+                "/sys/class/net/*/address": [ "read" ],
+                "/tmp/sysinfo/model": [ "read" ],
                 "/sbin/logread": [ "exec" ],
                 "/bin/ls": [ "exec" ],
                 "/sbin/ip": [ "exec" ],
-                "/usr/sbin/brctl": [ "exec" ]
+                "/usr/sbin/brctl": [ "exec" ],
+                "/bin/sh": [ "exec" ],
+                "/bin/cat": [ "exec" ],
+                "/usr/bin/tr": [ "exec" ],
+                "/usr/bin/md5sum": [ "exec" ],
+                "/usr/bin/cut": [ "exec" ]
             },
             "ubus": {
                 "file": [ "read", "stat", "exec" ],
