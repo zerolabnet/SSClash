@@ -98,8 +98,10 @@ async function getNetworkInterfaces() {
         console.log(`Found ${result.length} network interfaces:`, result.map(i => i.name).join(', '));
     }
 
+    const filteredResult = result.filter(iface => iface.name !== 'clash-tun');
+
     const categoryOrder = ['wan', 'ethernet', 'wifi', 'usb', 'vpn', 'virtual', 'other'];
-    return result.sort((a, b) => {
+    return filteredResult.sort((a, b) => {
         const catA = categoryOrder.indexOf(a.category);
         const catB = categoryOrder.indexOf(b.category);
         if (catA !== catB) return catA - catB;
@@ -283,11 +285,143 @@ function addHwidToYaml(yamlContent, userAgent, deviceOS, hwid, verOs, deviceMode
     return result.join('\n');
 }
 
+function transformProxyMode(content, proxyMode) {
+    let lines = content.split('\n');
+    let newLines = [];
+    let inTunSection = false;
+    let tunIndentLevel = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        if (trimmed.match(/^#\s*Proxy\s+Mode:/i)) continue;
+
+        if (trimmed === '' && i + 1 < lines.length && lines[i + 1].trim() === '') {
+            continue;
+        }
+
+        if (trimmed === '' && i + 1 < lines.length) {
+            const nextLine = lines[i + 1].trim();
+            if (nextLine.match(/^#\s*Proxy\s+Mode:/i) ||
+                nextLine.match(/^tproxy-port/) ||
+                nextLine.match(/^tun:/)) {
+                continue;
+            }
+        }
+
+        if (trimmed.match(/^tproxy-port:/)) {
+            continue;
+        }
+
+        if (trimmed.match(/^tun:/)) {
+            inTunSection = true;
+            tunIndentLevel = line.search(/\S/);
+            continue;
+        }
+
+        if (inTunSection) {
+            const currentIndent = line.search(/\S/);
+            if (line.trim() === '' ||
+                line.trim().startsWith('#') ||
+                (currentIndent > tunIndentLevel && line.trim() !== '')) {
+                continue;
+            } else {
+                inTunSection = false;
+            }
+        }
+
+        newLines.push(line);
+    }
+
+    let insertIndex = 0;
+    for (let i = 0; i < newLines.length; i++) {
+        if (newLines[i].trim().match(/^mode:/)) {
+            insertIndex = i + 1;
+            break;
+        }
+    }
+
+    let configToInsert = [];
+    switch (proxyMode) {
+        case 'tproxy':
+            configToInsert = [
+                '# Proxy Mode: TPROXY',
+                'tproxy-port: 7894'
+            ];
+            break;
+        case 'tun':
+            configToInsert = [
+                '# Proxy Mode: TUN',
+                'tun:',
+                '  enable: true',
+                '  device: clash-tun',
+                '  stack: system',
+                '  auto-detect-interface: true'
+            ];
+            break;
+        case 'mixed':
+            configToInsert = [
+                '# Proxy Mode: MIXED (TCP via TPROXY, UDP via TUN)',
+                'tproxy-port: 7894',
+                'tun:',
+                '  enable: true',
+                '  device: clash-tun',
+                '  stack: system',
+                '  auto-detect-interface: true'
+            ];
+            break;
+    }
+
+    newLines.splice(insertIndex, 0, ...configToInsert);
+    return newLines.join('\n');
+}
+
+async function detectCurrentProxyMode() {
+    try {
+        const configContent = await L.resolveDefault(fs.read('/opt/clash/config.yaml'), '');
+        if (!configContent) return 'tproxy';
+
+        const lines = configContent.split('\n');
+        let hasTproxy = false;
+        let hasTun = false;
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.match(/^tproxy-port:/) && !trimmed.startsWith('#')) {
+                hasTproxy = true;
+            }
+            if (trimmed.match(/^tun:/)) {
+                const tunIndex = lines.indexOf(line);
+                for (let i = tunIndex + 1; i < Math.min(tunIndex + 10, lines.length); i++) {
+                    const nextLine = lines[i].trim();
+                    if (nextLine.match(/^enable:\s*true/)) {
+                        hasTun = true;
+                        break;
+                    }
+                    if (nextLine.match(/^[a-zA-Z]/) && !nextLine.startsWith('#')) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (hasTproxy && hasTun) return 'mixed';
+        if (hasTun) return 'tun';
+        if (hasTproxy) return 'tproxy';
+        return 'tproxy';
+    } catch (e) {
+        console.error('Failed to detect proxy mode:', e);
+        return 'tproxy';
+    }
+}
+
 async function loadSettings() {
     try {
         const content = await L.resolveDefault(fs.read('/opt/clash/settings'), '');
         const settings = {
             mode: 'exclude',
+            proxyMode: '',
             autoDetectLan: true,
             autoDetectWan: true,
             blockQuic: true,
@@ -305,6 +439,7 @@ async function loadSettings() {
             if (key && value) {
                 switch(key.trim()) {
                     case 'INTERFACE_MODE': settings.mode = value.trim(); break;
+                    case 'PROXY_MODE': settings.proxyMode = value.trim(); break;
                     case 'AUTO_DETECT_LAN': settings.autoDetectLan = value.trim() === 'true'; break;
                     case 'AUTO_DETECT_WAN': settings.autoDetectWan = value.trim() === 'true'; break;
                     case 'BLOCK_QUIC': settings.blockQuic = value.trim() === 'true'; break;
@@ -333,6 +468,7 @@ async function loadSettings() {
     } catch (e) {
         return {
             mode: 'exclude',
+            proxyMode: '',
             autoDetectLan: true,
             autoDetectWan: true,
             blockQuic: true,
@@ -364,7 +500,7 @@ async function loadInterfacesByMode(mode) {
     }
 }
 
-async function saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, interfaces, enableHwid, hwidUserAgent, hwidDeviceOS) {
+async function saveSettings(mode, proxyMode, autoDetectLan, autoDetectWan, blockQuic, interfaces, enableHwid, hwidUserAgent, hwidDeviceOS) {
     try {
         let detectedLan = '';
         let detectedWan = '';
@@ -389,6 +525,7 @@ async function saveSettings(mode, autoDetectLan, autoDetectWan, blockQuic, inter
         const excludedInterfaces = mode === 'exclude' ? cleanInterfaces : [];
 
         const settingsContent = `INTERFACE_MODE=${mode}
+PROXY_MODE=${proxyMode}
 AUTO_DETECT_LAN=${autoDetectLan}
 AUTO_DETECT_WAN=${autoDetectWan}
 BLOCK_QUIC=${blockQuic}
@@ -403,20 +540,23 @@ HWID_DEVICE_OS=${hwidDeviceOS}
 
         await fs.write('/opt/clash/settings', settingsContent);
 
-        if (enableHwid) {
-            const hwidValues = await getHwidValues();
-            const configContent = await L.resolveDefault(fs.read('/opt/clash/config.yaml'), '');
-            if (configContent) {
-                const updatedConfig = addHwidToYaml(
-                    configContent,
+        const configContent = await L.resolveDefault(fs.read('/opt/clash/config.yaml'), '');
+        if (configContent) {
+            let updatedConfig = transformProxyMode(configContent, proxyMode);
+
+            if (enableHwid) {
+                const hwidValues = await getHwidValues();
+                updatedConfig = addHwidToYaml(
+                    updatedConfig,
                     hwidUserAgent,
                     hwidDeviceOS,
                     hwidValues.hwid,
                     hwidValues.verOs,
                     hwidValues.deviceModel
                 );
-                await fs.write('/opt/clash/config.yaml', updatedConfig);
             }
+
+            await fs.write('/opt/clash/config.yaml', updatedConfig);
         }
 
         ui.addNotification(null, E('p', _('Settings saved. Please restart the Clash service for changes to take effect.')), 'info');
@@ -819,6 +959,68 @@ function createModeSelector(currentMode) {
     modeContainer.appendChild(excludeLabel);
     modeContainer.appendChild(explicitLabel);
     container.appendChild(modeContainer);
+
+    return container;
+}
+
+function createProxyModeSection(currentProxyMode) {
+    const container = E('div', { 'class': 'cbi-section' });
+
+    container.appendChild(E('h3', _('Proxy Mode')));
+    container.appendChild(E('div', { 'class': 'cbi-section-descr' },
+        _('Choose how traffic is redirected to Clash: TPROXY (all traffic), TUN (all traffic via virtual interface), or MIXED (TCP via TPROXY, UDP via TUN — best for gaming).')
+    ));
+
+    const fieldContainer = E('div', { 'style': 'margin: 10px 0;' });
+
+    const select = E('select', {
+        'class': 'cbi-input-select',
+        'id': 'proxy-mode-select'
+    }, [
+        E('option', { 'value': 'tproxy' }, 'TPROXY'),
+        E('option', { 'value': 'tun' }, 'TUN'),
+        E('option', { 'value': 'mixed' }, 'MIXED (TCP+UDP)')
+    ]);
+
+    const descriptionsDiv = E('div', {}, [
+        E('div', {
+            'id': 'tproxy-desc',
+            'style': 'display: none; margin-top: 8px; padding: 10px; background: #f0f8ff; border-left: 3px solid #0066cc; border-radius: 3px; font-size: 12px;'
+        }, [
+            E('strong', 'TPROXY: '),
+            _('Transparent proxy mode. Routes both TCP and UDP through TPROXY port 7894. Best compatibility, requires kernel TPROXY support.')
+        ]),
+        E('div', {
+            'id': 'tun-desc',
+            'style': 'display: none; margin-top: 8px; padding: 10px; background: #f0fff0; border-left: 3px solid #00cc00; border-radius: 3px; font-size: 12px;'
+        }, [
+            E('strong', 'TUN: '),
+            _('TUN interface mode. Creates virtual network interface for all traffic. Better performance, works without TPROXY. Requires TUN kernel module.')
+        ]),
+        E('div', {
+            'id': 'mixed-desc',
+            'style': 'display: none; margin-top: 8px; padding: 10px; background: #fff8f0; border-left: 3px solid #ff9900; border-radius: 3px; font-size: 12px;'
+        }, [
+            E('strong', 'MIXED: '),
+            _('Hybrid mode (best for gaming). TCP via TPROXY (stable), UDP via TUN (low latency). Optimal for online games requiring fast UDP.')
+        ])
+    ]);
+
+    fieldContainer.appendChild(select);
+    fieldContainer.appendChild(descriptionsDiv);
+    container.appendChild(fieldContainer);
+
+    setTimeout(function() {
+        select.value = currentProxyMode || 'tproxy';
+        select.dispatchEvent(new Event('change'));
+    }, 0);
+
+    select.addEventListener('change', function() {
+        const selectedMode = this.value;
+        document.getElementById('tproxy-desc').style.display = selectedMode === 'tproxy' ? 'block' : 'none';
+        document.getElementById('tun-desc').style.display = selectedMode === 'tun' ? 'block' : 'none';
+        document.getElementById('mixed-desc').style.display = selectedMode === 'mixed' ? 'block' : 'none';
+    });
 
     return container;
 }
@@ -1272,6 +1474,10 @@ return view.extend({
         }
 
         const modeSelector = createModeSelector(settings.mode);
+
+        const currentProxyMode = settings.proxyMode || await detectCurrentProxyMode();
+        const proxyModeSection = createProxyModeSection(currentProxyMode);
+
         const autoDetectOptions = createAutoDetectOptions(settings.mode, settings.autoDetectLan, settings.autoDetectWan);
         const interfaceSelector = createInterfaceSelector(interfaces, selectedInterfaces, settings.mode);
         const additionalSettings = createAdditionalSettings(
@@ -1386,6 +1592,8 @@ return view.extend({
             'class': 'btn',
             'click': async function() {
                 const mode = modeSelector.querySelector('input[name="interface_mode"]:checked').value;
+                const proxyModeSelect = document.getElementById('proxy-mode-select');
+                const savedProxyMode = proxyModeSelect ? proxyModeSelect.value : 'tproxy';
                 const autoDetectLan = autoDetectOptions.querySelector('#auto_detect_lan').checked;
                 const autoDetectWan = autoDetectOptions.querySelector('#auto_detect_wan').checked;
                 const blockQuic = additionalSettings.querySelector('#block_quic').checked;
@@ -1401,6 +1609,7 @@ return view.extend({
 
                 const success = await saveSettings(
                     mode,
+                    savedProxyMode,
                     autoDetectLan,
                     autoDetectWan,
                     blockQuic,
@@ -1614,6 +1823,7 @@ return view.extend({
 
         const view = E([
             modeSelector,
+            proxyModeSection,
             autoDetectOptions,
             interfaceSelector,
             additionalSettings,

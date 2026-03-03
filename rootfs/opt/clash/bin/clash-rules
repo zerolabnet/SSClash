@@ -19,6 +19,7 @@ readonly RESERVED_NETWORKS="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.2
 # Global Settings Variables
 # These are populated by load_all_settings_once() to avoid repeated file reads.
 MODE="exclude"
+PROXY_MODE="tproxy"
 AUTO_DETECT_LAN="true"
 AUTO_DETECT_WAN="true"
 BLOCK_QUIC="true"
@@ -43,6 +44,7 @@ load_all_settings_once() {
     while IFS='=' read -r key value; do
         case "$key" in
             "INTERFACE_MODE") MODE="$value" ;;
+            "PROXY_MODE") PROXY_MODE="$value" ;;
             "AUTO_DETECT_LAN") AUTO_DETECT_LAN="$value" ;;
             "AUTO_DETECT_WAN") AUTO_DETECT_WAN="$value" ;;
             "BLOCK_QUIC") BLOCK_QUIC="$value" ;;
@@ -55,6 +57,7 @@ load_all_settings_once() {
 
     local settings_part=""
     [ -n "$MODE" ] && settings_part="$settings_part, Mode: $MODE"
+    [ -n "$PROXY_MODE" ] && settings_part="$settings_part, Proxy mode: $PROXY_MODE"
     [ -n "$AUTO_DETECT_LAN" ] && settings_part="$settings_part, Auto-detect LAN: $AUTO_DETECT_LAN"
     [ -n "$AUTO_DETECT_WAN" ] && settings_part="$settings_part, Auto-detect WAN: $AUTO_DETECT_WAN"
     [ -n "$BLOCK_QUIC" ] && settings_part="$settings_part, Block QUIC: $BLOCK_QUIC"
@@ -778,6 +781,10 @@ apply_nft_loop_prevention_mangle() {
     # Exclude packets already marked by Clash
     nft add rule inet clash CLASH_MARK meta mark 0x0002 return
     nft add rule inet clash CLASH_MARK meta mark and 0xff00 != 0 return
+    # In MIXED mode UDP is marked 0x0003; skip re-processing if seen again
+    if [ "$PROXY_MODE" = "mixed" ]; then
+        nft add rule inet clash CLASH_MARK meta mark 0x0003 return
+    fi
     msg "Loop prevention rules applied in mangle"
 }
 
@@ -817,27 +824,43 @@ apply_nft_server_exclusions_mangle() {
 }
 
 # For nftables - apply fake-ip or global marking in mangle chain
+# TPROXY/TUN: both TCP and UDP get mark 0x0001
+# MIXED:      TCP gets 0x0001 (→ TPROXY), UDP gets 0x0003 (→ clash-tun via table 101)
 apply_nft_marking_mangle() {
     local fake_ip_range="$1"
+    local udp_mark="0x0001"
+    [ "$PROXY_MODE" = "mixed" ] && udp_mark="0x0003"
+
     if [ -n "$fake_ip_range" ]; then
-        # Mark packets destined for fake-ip range
         nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto tcp meta mark set 0x0001 counter
-        nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto udp meta mark set 0x0001 counter
-        msg "Marking applied only for fake-ip range: $fake_ip_range"
+        nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto udp meta mark set "$udp_mark" counter
+        msg "Marking applied only for fake-ip range: $fake_ip_range (UDP mark: $udp_mark)"
     else
-        # Mark all remaining traffic
         nft add rule inet clash CLASH_MARK meta l4proto tcp meta mark set 0x0001 counter
-        nft add rule inet clash CLASH_MARK meta l4proto udp meta mark set 0x0001 counter
-        msg "Marking applied for all traffic"
+        nft add rule inet clash CLASH_MARK meta l4proto udp meta mark set "$udp_mark" counter
+        msg "Marking applied for all traffic (UDP mark: $udp_mark)"
     fi
 }
 
-# For nftables - apply TPROXY rules in proxy chain
+# For nftables - apply TPROXY rules in proxy chain (mode-aware)
+# TPROXY: TCP+UDP both redirected via TPROXY
+# MIXED:  TCP only via TPROXY; UDP (mark 0x0003) routed to clash-tun by kernel
+# TUN:    no TPROXY at all; all traffic routed to clash-tun by kernel
 apply_nft_tproxy_proxy() {
-    # Apply TPROXY to marked packets
-    nft add rule inet clash proxy meta mark 0x0001 meta l4proto tcp tproxy ip to 127.0.0.1:7894 counter
-    nft add rule inet clash proxy meta mark 0x0001 meta l4proto udp tproxy ip to 127.0.0.1:7894 counter
-    msg "TPROXY rules applied in proxy chain"
+    case "$PROXY_MODE" in
+        "tun")
+            msg "TPROXY rules skipped (TUN mode - all traffic routes via clash-tun)"
+            ;;
+        "mixed")
+            nft add rule inet clash proxy meta mark 0x0001 meta l4proto tcp tproxy ip to 127.0.0.1:7894 counter
+            msg "TPROXY rules applied for TCP only (MIXED mode)"
+            ;;
+        *)
+            nft add rule inet clash proxy meta mark 0x0001 meta l4proto tcp tproxy ip to 127.0.0.1:7894 counter
+            nft add rule inet clash proxy meta mark 0x0001 meta l4proto udp tproxy ip to 127.0.0.1:7894 counter
+            msg "TPROXY rules applied for TCP and UDP (TPROXY mode)"
+            ;;
+    esac
 }
 
 # For nftables - apply interface exclusion rules in output chain
@@ -874,6 +897,10 @@ apply_nft_output_rules() {
     # Exclude already marked packets
     nft add rule inet clash output meta mark 0x0002 return
     nft add rule inet clash output meta mark and 0xff00 != 0 return
+    # In MIXED mode UDP gets mark 0x0003; prevent re-processing if it loops back
+    if [ "$PROXY_MODE" = "mixed" ]; then
+        nft add rule inet clash output meta mark 0x0003 return
+    fi
 
     # Skip exclusion rules in whitelist mode
     if [ "$fake_ip_filter_mode" != "whitelist" ]; then
@@ -897,16 +924,17 @@ apply_nft_output_rules() {
     # Apply Clash exclusions
     apply_nft_clash_exclusions_output
 
+    local udp_mark="0x0001"
+    [ "$PROXY_MODE" = "mixed" ] && udp_mark="0x0003"
+
     if [ -n "$fake_ip_range" ]; then
-        # Mark packets destined for fake-ip range
         nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto tcp meta mark set 0x0001 counter
-        nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto udp meta mark set 0x0001 counter
-        msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range"
+        nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto udp meta mark set "$udp_mark" counter
+        msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range (UDP mark: $udp_mark)"
     else
-        # Mark all remaining traffic
         nft add rule inet clash output meta mark 0 meta l4proto tcp meta mark set 0x0001
-        nft add rule inet clash output meta mark 0 meta l4proto udp meta mark set 0x0001
-        msg "OUTPUT: Marking applied for all traffic"
+        nft add rule inet clash output meta mark 0 meta l4proto udp meta mark set "$udp_mark"
+        msg "OUTPUT: Marking applied for all traffic (UDP mark: $udp_mark)"
     fi
 
     msg "Output chain rules applied"
@@ -952,6 +980,10 @@ apply_iptables_dhcp_rules() {
 apply_iptables_loop_prevention() {
     iptables -t mangle -A CLASH_PROCESS -m mark --mark 0x0002 -j RETURN
     iptables -t mangle -A CLASH_PROCESS -m mark --mark 0xff00/0xff00 -j RETURN
+    # In MIXED mode UDP is marked 0x0003; skip re-processing if seen again
+    if [ "$PROXY_MODE" = "mixed" ]; then
+        iptables -t mangle -A CLASH_PROCESS -m mark --mark 0x0003 -j RETURN
+    fi
     msg "Loop prevention rules applied"
 }
 
@@ -999,18 +1031,47 @@ apply_iptables_server_exclusions() {
     fi
 }
 
-# For iptables - apply TPROXY rules
+# For iptables - apply traffic redirection rules (mode-aware)
+# TPROXY: TCP+UDP both redirected via TPROXY port 7894
+# MIXED:  TCP via TPROXY; UDP marked 0x0003 for routing to clash-tun (table 101)
+# TUN:    no TPROXY; TCP+UDP both marked 0x0001 for routing to clash-tun (table 100)
 apply_iptables_tproxy_rules() {
     local fake_ip_range="$1"
-    if [ -n "$fake_ip_range" ]; then
-        iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-        iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-        msg "TPROXY rules applied only for fake-ip range: $fake_ip_range"
-    else
-        iptables -t mangle -A CLASH_PROCESS -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-        iptables -t mangle -A CLASH_PROCESS -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-        msg "TPROXY rules applied for all traffic"
-    fi
+    case "$PROXY_MODE" in
+        "tun")
+            if [ -n "$fake_ip_range" ]; then
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j MARK --set-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j MARK --set-mark 0x0001
+                msg "TUN mark rules applied for fake-ip range: $fake_ip_range"
+            else
+                iptables -t mangle -A CLASH_PROCESS -p tcp -j MARK --set-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -p udp -j MARK --set-mark 0x0001
+                msg "TUN mark rules applied for all traffic"
+            fi
+            ;;
+        "mixed")
+            if [ -n "$fake_ip_range" ]; then
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j MARK --set-mark 0x0003
+                msg "MIXED mode rules applied for fake-ip range: $fake_ip_range (TCP TPROXY, UDP mark 0x0003)"
+            else
+                iptables -t mangle -A CLASH_PROCESS -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -p udp -j MARK --set-mark 0x0003
+                msg "MIXED mode rules applied (TCP TPROXY, UDP mark 0x0003 for clash-tun)"
+            fi
+            ;;
+        *)
+            if [ -n "$fake_ip_range" ]; then
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                msg "TPROXY rules applied only for fake-ip range: $fake_ip_range"
+            else
+                iptables -t mangle -A CLASH_PROCESS -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                msg "TPROXY rules applied for all traffic"
+            fi
+            ;;
+    esac
 }
 
 # For iptables - apply interface exclusion rules in output chain
@@ -1037,6 +1098,10 @@ apply_iptables_output_rules() {
     # Exclude already marked packets
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0x0002 -j RETURN
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0xff00/0xff00 -j RETURN
+    # In MIXED mode UDP gets mark 0x0003; prevent re-processing if it loops back
+    if [ "$PROXY_MODE" = "mixed" ]; then
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0x0003 -j RETURN
+    fi
 
     # Skip exclusion rules in whitelist mode
     if [ "$fake_ip_filter_mode" != "whitelist" ]; then
@@ -1067,14 +1132,17 @@ apply_iptables_output_rules() {
     iptables -t mangle -A CLASH_LOCAL -p tcp --sport 7890:7894 -j RETURN
     iptables -t mangle -A CLASH_LOCAL -p udp --sport 7890:7894 -j RETURN
 
+    local udp_mark="0x0001"
+    [ "$PROXY_MODE" = "mixed" ] && udp_mark="0x0003"
+
     if [ -n "$fake_ip_range" ]; then
         iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -d "$fake_ip_range" -j MARK --set-mark 0x0001
-        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -d "$fake_ip_range" -j MARK --set-mark 0x0001
-        msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range"
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -d "$fake_ip_range" -j MARK --set-mark "$udp_mark"
+        msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range (UDP mark: $udp_mark)"
     else
         iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -j MARK --set-mark 0x0001
-        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark 0x0001
-        msg "OUTPUT: Marking applied for all traffic"
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark "$udp_mark"
+        msg "OUTPUT: Marking applied for all traffic (UDP mark: $udp_mark)"
     fi
 
     msg "Output chain rules applied"
@@ -1298,6 +1366,44 @@ update_rules() {
     fi
 }
 
+# Set up ip route/ip rule entries based on PROXY_MODE
+# TPROXY: fwmark 0x0001 → table 100 → lo  (kernel delivers to TPROXY socket)
+# TUN:    fwmark 0x0001 → table 100 → clash-tun
+# MIXED:  fwmark 0x0001 → table 100 → lo (TCP/TPROXY)
+#         fwmark 0x0003 → table 101 → clash-tun (UDP/TUN)
+setup_routing_rules() {
+    case "$PROXY_MODE" in
+        "tun")
+            ip route add default dev clash-tun table 100 2>/dev/null
+            ip rule add fwmark 0x0001 table 100 2>/dev/null
+            msg "Routing: fwmark 0x0001 → table 100 → clash-tun (TUN mode)"
+            ;;
+        "mixed")
+            ip route add local default dev lo table 100 2>/dev/null
+            ip rule add fwmark 0x0001 table 100 2>/dev/null
+            ip route add default dev clash-tun table 101 2>/dev/null
+            ip rule add fwmark 0x0003 table 101 2>/dev/null
+            msg "Routing: TCP fwmark 0x0001 → table 100 → lo (TPROXY), UDP fwmark 0x0003 → table 101 → clash-tun (MIXED mode)"
+            ;;
+        *)
+            ip route add local default dev lo table 100 2>/dev/null
+            ip rule add fwmark 0x0001 table 100 2>/dev/null
+            msg "Routing: fwmark 0x0001 → table 100 → lo (TPROXY mode)"
+            ;;
+    esac
+}
+
+# Remove all possible routing entries created by setup_routing_rules.
+# Cleans up all modes unconditionally (safe: errors suppressed)
+# so that stop() works correctly even if PROXY_MODE changed since start.
+teardown_routing_rules() {
+    ip route del local default dev lo table 100 2>/dev/null
+    ip route del default dev clash-tun table 100 2>/dev/null
+    ip route del default dev clash-tun table 101 2>/dev/null
+    ip rule del fwmark 0x0001 table 100 2>/dev/null
+    ip rule del fwmark 0x0003 table 101 2>/dev/null
+}
+
 start() {
     msg "Starting Clash rules script"
 
@@ -1326,21 +1432,32 @@ start() {
         msg "WARNING: No server IPs extracted from config"
     fi
 
+    case "$PROXY_MODE" in
+        "tun")
+            msg "Proxy mode: TUN (all traffic routed via clash-tun, no TPROXY)"
+            ;;
+        "mixed")
+            msg "Proxy mode: MIXED (TCP via TPROXY port 7894, UDP via clash-tun)"
+            ;;
+        *)
+            msg "Proxy mode: TPROXY (TCP+UDP via TPROXY port 7894)"
+            ;;
+    esac
+
     if [ -n "$fake_ip_range" ]; then
         if [ "$fake_ip_filter_mode" = "whitelist" ]; then
-            msg "Detected fake-ip range: $fake_ip_range with whitelist mode (most exclusion rules will be skipped) - TPROXY will be applied only to this range"
+            msg "Detected fake-ip range: $fake_ip_range with whitelist mode (most exclusion rules will be skipped) - proxy will be applied only to this range"
         else
-            msg "Detected fake-ip range: $fake_ip_range with blacklist mode - TPROXY will be applied only to this range"
+            msg "Detected fake-ip range: $fake_ip_range with blacklist mode - proxy will be applied only to this range"
         fi
     else
-        msg "No fake-ip configuration detected - TPROXY will be applied to all traffic"
+        msg "No fake-ip configuration detected - proxy will be applied to all traffic"
     fi
 
     if hash nft 2>/dev/null; then
         msg "Using nftables for traffic redirection"
         if apply_nft_rules "$server_ips" "$fake_ip_range" "$fake_ip_filter_mode"; then
-            ip route add local default dev lo table 100 2>/dev/null
-            ip rule add fwmark 0x0001 table 100 2>/dev/null
+            setup_routing_rules
         else
             msg "ERROR: Failed to apply nftables rules"
             return 1
@@ -1348,8 +1465,7 @@ start() {
     elif hash iptables 2>/dev/null; then
         msg "Using iptables for traffic redirection"
         if apply_iptables_rules "$server_ips" "$fake_ip_range" "$fake_ip_filter_mode"; then
-            ip route add local default dev lo table 100 2>/dev/null
-            ip rule add fwmark 0x0001 table 100 2>/dev/null
+            setup_routing_rules
         else
             msg "ERROR: Failed to apply iptables rules"
             return 1
@@ -1359,7 +1475,7 @@ start() {
         return 1
     fi
 
-    msg "Clash rules script started successfully"
+    msg "Clash rules script started successfully (proxy mode: $PROXY_MODE, interface mode: $MODE)"
 }
 
 stop() {
@@ -1370,8 +1486,7 @@ stop() {
 
     if hash nft 2>/dev/null; then
         nft delete table inet clash 2>/dev/null
-        ip route del local default dev lo table 100 2>/dev/null
-        ip rule del fwmark 0x0001 table 100 2>/dev/null
+        teardown_routing_rules
         msg "nftables rules removed successfully"
     elif hash iptables 2>/dev/null; then
         if [ "$BLOCK_QUIC" = "true" ]; then
@@ -1386,15 +1501,14 @@ stop() {
         iptables -t mangle -D OUTPUT -j CLASH_LOCAL 2>/dev/null
         iptables -t mangle -F CLASH_LOCAL 2>/dev/null
         iptables -t mangle -X CLASH_LOCAL 2>/dev/null
-        ip route del local default dev lo table 100 2>/dev/null
-        ip rule del fwmark 0x0001 table 100 2>/dev/null
+        teardown_routing_rules
         msg "iptables rules removed successfully"
     else
         msg "ERROR: Neither nftables nor iptables found"
         return 1
     fi
 
-    msg "Clash rules script stopped successfully"
+    msg "Clash rules script stopped successfully (all routing rules cleaned up)"
 }
 
 case "$1" in
