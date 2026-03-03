@@ -62,7 +62,7 @@ jobs:
           cd "$SDK_HOME"
           ./scripts/feeds update > /dev/null 2>&1
           ./scripts/feeds install -a > /dev/null 2>&1
-          ln -s "${{ github.workspace }}" "package/$PACKAGE_NAME"
+          ln -s "${{ github.workspace }}/luci-app-ssclash" "package/$PACKAGE_NAME"
           make defconfig > /dev/null 2>&1
           make package/${PACKAGE_NAME}/compile V=s
           
