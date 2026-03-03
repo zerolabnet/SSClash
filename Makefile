@@ -4,13 +4,17 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ssclash
-PKG_VERSION:=3.3.0
+PKG_VERSION:=3.4.0
 PKG_RELEASE:=1
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
 LUCI_TITLE:=LuCI Support for SSClash
-LUCI_DEPENDS:=+luci-base
+LUCI_DEPENDS:=+luci-base +coreutils-base64 +kmod-tun
 LUCI_PKGARCH:=all
+
+PKG_CONFIG_DEPENDS:= \
+	CONFIG_PACKAGE_$(PKG_NAME)_Iptables_Transparent_Proxy \
+	CONFIG_PACKAGE_$(PKG_NAME)_Nftables_Transparent_Proxy
 
 PKG_BUILD_DEPENDS:=luci-base/host
 
@@ -23,6 +27,23 @@ define Package/$(PKG_NAME)
 	TITLE:=$(LUCI_TITLE)
 	DEPENDS:=$(LUCI_DEPENDS)
 	PKGARCH:=$(LUCI_PKGARCH)
+endef
+
+define Package/$(PKG_NAME)/config
+choice
+	prompt "Transparent Proxy Backend for SSClash"
+	default PACKAGE_$(PKG_NAME)_Iptables_Transparent_Proxy if !PACKAGE_firewall4
+	default PACKAGE_$(PKG_NAME)_Nftables_Transparent_Proxy if PACKAGE_firewall4
+
+config PACKAGE_$(PKG_NAME)_Iptables_Transparent_Proxy
+	bool "Iptables Transparent Proxy"
+	select PACKAGE_iptables-mod-tproxy
+
+config PACKAGE_$(PKG_NAME)_Nftables_Transparent_Proxy
+	bool "Nftables Transparent Proxy"
+	select PACKAGE_kmod-nft-tproxy
+
+endchoice
 endef
 
 define Package/$(PKG_NAME)/description

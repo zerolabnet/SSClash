@@ -17,24 +17,33 @@ opkg update
 
 ## Шаг 2: Установка необходимых пакетов
 
-Установите необходимый модуль ядра для nftables.
+В большинстве случаев **не нужно ничего устанавливать вручную**: при установке `luci-app-ssclash` из настроенного фида OpenWrt `opkg` автоматически подтянет:
+
+- `coreutils-base64` — для скриптов, работающих с Base64;
+- `kmod-tun` — модуль ядра для режима TUN;
+- подходящий модуль прозрачного прокси в зависимости от стека файрвола:
+  - `kmod-nft-tproxy` для **firewall4 / nftables**;
+  - `iptables-mod-tproxy` для **firewall3 / iptables**.
+
+Только если вы устанавливаете `.ipk` офлайн или собираете собственный образ и какие‑то зависимости отсутствуют, вы можете установить модули прозрачного прокси вручную:
 
 ```bash
+# Для nftables (firewall4)
 opkg install kmod-nft-tproxy
-```
 
-Для iptables (если у вас OpenWrt версии < 22.03.x) – `iptables-mod-tproxy`.
+# Для iptables (firewall3, OpenWrt < 22.03.x)
+opkg install iptables-mod-tproxy
+```
 
 ## Шаг 3: Загрузка и установка пакета `luci-app-ssclash`
 
 Загрузите пакет SSClash и установите его.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.2.0/luci-app-ssclash_3.2.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.2.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_3.2.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.4.0/luci-app-ssclash_3.4.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.4.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_3.4.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
-
 
 ## Шаг 4: Автоматическое управление ядром Mihomo
 
@@ -163,8 +172,14 @@ SSClash предлагает два режима обработки интерф
 Чтобы полностью удалить Clash:
 
 ```bash
-opkg remove luci-app-ssclash kmod-nft-tproxy
+opkg remove luci-app-ssclash
 rm -rf /opt/clash
+```
+
+Если вы уверены, что прозрачное проксирование и режим TUN больше не используются другими сервисами, вы также можете удалить соответствующие модули ядра:
+
+```bash
+opkg remove kmod-nft-tproxy iptables-mod-tproxy kmod-tun
 ```
 
 

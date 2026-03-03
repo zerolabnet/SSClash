@@ -19,21 +19,31 @@ opkg update
 
 ## Step 2: Install Required Packages
 
-Install the necessary kernel module for nftables.
+In most cases you **do not need to install anything manually**: when you install `luci-app-ssclash` from a configured OpenWrt feed, `opkg` will automatically pull in:
+
+- `coreutils-base64` – for scripts that use Base64;
+- `kmod-tun` – for TUN mode;
+- the appropriate transparent proxy module depending on your firewall stack:
+  - `kmod-nft-tproxy` for **firewall4 / nftables**;
+  - `iptables-mod-tproxy` for **firewall3 / iptables**.
+
+Only if you are installing the `.ipk` offline or building a custom image and dependencies are missing, you can install the transparent proxy modules manually:
 
 ```bash
+# For nftables (firewall4)
 opkg install kmod-nft-tproxy
-```
 
-For iptables (if you have OpenWrt version < 22.03.x) – `iptables-mod-tproxy`.
+# For iptables (firewall3, OpenWrt < 22.03.x)
+opkg install iptables-mod-tproxy
+```
 
 ## Step 3: Download and Install `luci-app-ssclash` Package
 
 Download the SSClash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.2.0/luci-app-ssclash_3.2.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.2.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_3.2.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.4.0/luci-app-ssclash_3.4.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.4.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_3.4.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -161,8 +171,14 @@ Access the Clash dashboard directly from the LuCI interface with automatic confi
 To remove Clash completely:
 
 ```bash
-opkg remove luci-app-ssclash kmod-nft-tproxy
+opkg remove luci-app-ssclash
 rm -rf /opt/clash
+```
+
+If you are sure that transparent proxying and TUN mode are no longer needed by any other services, you can also remove the kernel modules:
+
+```bash
+opkg remove kmod-nft-tproxy iptables-mod-tproxy kmod-tun
 ```
 
 ---
