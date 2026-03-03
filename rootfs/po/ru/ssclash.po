@@ -168,6 +168,24 @@ msgstr "Не удается прочитать директорию списко
 msgid "A list with this name already exists."
 msgstr "Список с таким именем уже существует."
 
+msgid "TECHNICAL"
+msgstr "ТЕХНИЧЕСКИЙ"
+
+msgid "IP-CIDR List (fake-ip whitelist mode)"
+msgstr "Список IP-CIDR (режим fake-ip whitelist)"
+
+msgid "This list is used by the firewall (nftables/iptables) to mark traffic to specified IPs and subnets for proxying in fake-ip whitelist mode. Enter one IPv4 address or CIDR per line (e.g. 8.8.8.8 or 1.2.3.0/24). Lines starting with # are treated as comments. Saving applies changes immediately without restarting Mihomo."
+msgstr "Этот список используется файрволом (nftables/iptables) для маркировки трафика к указанным IP и подсетям для проксирования в режиме fake-ip whitelist. Вводите по одному IPv4-адресу или CIDR на строку (например, 8.8.8.8 или 1.2.3.0/24). Строки, начинающиеся с #, считаются комментариями. Сохранение применяет изменения немедленно без перезапуска Mihomo."
+
+msgid "IP-CIDR whitelist saved and firewall rules updated."
+msgstr "Белый список IP-CIDR сохранён, правила файрвола обновлены."
+
+msgid "IP-CIDR whitelist saved, but firewall update failed: %s"
+msgstr "Белый список IP-CIDR сохранён, но обновление файрвола не удалось: %s"
+
+msgid "Failed to save IP-CIDR whitelist: %s"
+msgstr "Не удалось сохранить белый список IP-CIDR: %s"
+
 ### Модуль settings.js ###
 
 msgid "WAN Interfaces"
@@ -202,6 +220,21 @@ msgstr "Режим обработки интерфейсов"
 
 msgid "Choose how to handle network interfaces for proxy processing."
 msgstr "Выберите, как обрабатывать сетевые интерфейсы для проксирования."
+
+msgid "Proxy Mode"
+msgstr "Режим проксирования"
+
+msgid "Choose how traffic is redirected to Clash: TPROXY (all traffic), TUN (all traffic via virtual interface), or MIXED (TCP via TPROXY, UDP via TUN — best for gaming)."
+msgstr "Выберите, как перенаправлять трафик в Clash: TPROXY (весь трафик), TUN (весь трафик через виртуальный интерфейс) или MIXED (TCP через TPROXY, UDP через TUN — оптимально для игр)."
+
+msgid "Transparent proxy mode. Routes both TCP and UDP through TPROXY port 7894. Best compatibility, requires kernel TPROXY support."
+msgstr "Прозрачный режим прокси. Направляет как TCP, так и UDP через TPROXY-порт 7894. Максимальная совместимость, требуется поддержка TPROXY в ядре."
+
+msgid "TUN interface mode. Creates virtual network interface for all traffic. Better performance, works without TPROXY. Requires TUN kernel module."
+msgstr "Режим TUN-интерфейса. Создаёт виртуальный сетевой интерфейс для всего трафика. Лучшая производительность, работает без TPROXY. Требуется модуль ядра TUN."
+
+msgid "Hybrid mode (best for gaming). TCP via TPROXY (stable), UDP via TUN (low latency). Optimal for online games requiring fast UDP."
+msgstr "Гибридный режим (лучший для игр). TCP через TPROXY (стабильно), UDP через TUN (низкая задержка). Оптимален для онлайн‑игр, требующих быстрого UDP."
 
 msgid "Automatic Interface Detection"
 msgstr "Автоматическое определение интерфейсов"

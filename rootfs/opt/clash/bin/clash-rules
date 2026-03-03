@@ -15,6 +15,9 @@ readonly SUBSCRIPTION_CACHE_FILE="/tmp/clash/clash_subscription_ips.cache"
 readonly SUBSCRIPTION_LOCK_FILE="/tmp/clash/clash_subscription.lock"
 # Reserved networks
 readonly RESERVED_NETWORKS="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.2.0/24 192.88.99.0/24 192.168.0.0/16 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4 255.255.255.255/32"
+# Fake-ip whitelist IP-CIDR technical list (used only by the firewall, not by config.yaml)
+readonly FAKEIP_WHITELIST_FILE="/opt/clash/lst/fakeip-whitelist-ipcidr.txt"
+readonly FAKEIP_IPSET_NAME="clash_fakeip_whitelist"
 
 # Global Settings Variables
 # These are populated by load_all_settings_once() to avoid repeated file reads.
@@ -27,6 +30,9 @@ DETECTED_LAN=""
 DETECTED_WAN=""
 INCLUDED_INTERFACES=""
 EXCLUDED_INTERFACES=""
+# Populated in start() when fake-ip-filter-mode: whitelist is detected
+FAKE_IP_FILTER_MODE="blacklist"
+FAKEIP_WHITELIST_IPS=""
 
 # Function to log messages
 msg() {
@@ -77,6 +83,66 @@ load_all_settings_once() {
 is_valid_ip() {
     local ip="$1"
     echo "$ip" | grep -qE '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+}
+
+# Function to validate an IPv4 address or IPv4/prefix-length CIDR entry
+is_valid_ipv4_cidr() {
+    local entry="$1"
+    local ip prefix
+    case "$entry" in
+        */*)
+            ip="${entry%/*}"
+            prefix="${entry#*/}"
+            if is_valid_ip "$ip" && echo "$prefix" | grep -qE '^([0-9]|[12][0-9]|3[0-2])$'; then
+                return 0
+            fi
+            return 1
+            ;;
+        *)
+            is_valid_ip "$entry"
+            ;;
+    esac
+}
+
+# Read and validate entries from the fakeip whitelist file.
+# Outputs valid IPv4/CIDR entries one per line; skips comments and blank lines.
+read_fakeip_whitelist_entries() {
+    [ -f "$FAKEIP_WHITELIST_FILE" ] || return 0
+    while IFS= read -r line; do
+        line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        [ -z "$line" ] && continue
+        case "$line" in '#'*) continue ;; esac
+        if is_valid_ipv4_cidr "$line"; then
+            echo "$line"
+        else
+            msg "WARNING: skipping invalid IP/CIDR in fakeip whitelist: '$line'"
+        fi
+    done < "$FAKEIP_WHITELIST_FILE"
+}
+
+# Create the fakeip whitelist ipset if it does not exist, then flush it ready for population.
+ensure_fakeip_ipset() {
+    if ! ipset list "$FAKEIP_IPSET_NAME" >/dev/null 2>&1; then
+        ipset create "$FAKEIP_IPSET_NAME" hash:net maxelem 65536 2>/dev/null || {
+            msg "ERROR: Failed to create ipset $FAKEIP_IPSET_NAME"
+            return 1
+        }
+        msg "Created ipset: $FAKEIP_IPSET_NAME"
+    else
+        ipset flush "$FAKEIP_IPSET_NAME"
+    fi
+}
+
+# Populate the fakeip whitelist ipset from FAKEIP_WHITELIST_IPS (already loaded into memory).
+populate_fakeip_ipset_from_file() {
+    if [ -z "$FAKEIP_WHITELIST_IPS" ]; then
+        msg "Fakeip whitelist is empty, ipset $FAKEIP_IPSET_NAME left empty"
+        return 0
+    fi
+    echo "$FAKEIP_WHITELIST_IPS" | while IFS= read -r cidr; do
+        [ -n "$cidr" ] && ipset add "$FAKEIP_IPSET_NAME" "$cidr" 2>/dev/null
+    done
+    msg "Populated ipset $FAKEIP_IPSET_NAME with $(echo "$FAKEIP_WHITELIST_IPS" | wc -l | xargs) entries"
 }
 
 # Function to resolve domain name to IP addresses
@@ -840,6 +906,12 @@ apply_nft_marking_mangle() {
         nft add rule inet clash CLASH_MARK meta l4proto udp meta mark set "$udp_mark" counter
         msg "Marking applied for all traffic (UDP mark: $udp_mark)"
     fi
+    # Additionally mark traffic to fakeip whitelist IP-CIDR entries (whitelist mode only)
+    if [ "$FAKE_IP_FILTER_MODE" = "whitelist" ] && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+        nft add rule inet clash CLASH_MARK ip daddr @fakeip_whitelist meta l4proto tcp meta mark set 0x0001 counter
+        nft add rule inet clash CLASH_MARK ip daddr @fakeip_whitelist meta l4proto udp meta mark set "$udp_mark" counter
+        msg "Marking also applied for fakeip whitelist IP-CIDR nft set (UDP mark: $udp_mark)"
+    fi
 }
 
 # For nftables - apply TPROXY rules in proxy chain (mode-aware)
@@ -935,6 +1007,12 @@ apply_nft_output_rules() {
         nft add rule inet clash output meta mark 0 meta l4proto tcp meta mark set 0x0001
         nft add rule inet clash output meta mark 0 meta l4proto udp meta mark set "$udp_mark"
         msg "OUTPUT: Marking applied for all traffic (UDP mark: $udp_mark)"
+    fi
+    # Additionally mark locally generated traffic to fakeip whitelist IP-CIDR entries
+    if [ "$fake_ip_filter_mode" = "whitelist" ] && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+        nft add rule inet clash output ip daddr @fakeip_whitelist meta l4proto tcp meta mark set 0x0001 counter
+        nft add rule inet clash output ip daddr @fakeip_whitelist meta l4proto udp meta mark set "$udp_mark" counter
+        msg "OUTPUT: Marking also applied for fakeip whitelist IP-CIDR nft set (UDP mark: $udp_mark)"
     fi
 
     msg "Output chain rules applied"
@@ -1072,6 +1150,26 @@ apply_iptables_tproxy_rules() {
             fi
             ;;
     esac
+    # Add ipset-based rules for fakeip whitelist IP-CIDR entries (whitelist mode only)
+    if [ "$FAKE_IP_FILTER_MODE" = "whitelist" ] && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+        case "$PROXY_MODE" in
+            "tun")
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j MARK --set-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j MARK --set-mark 0x0001
+                msg "TUN: fakeip whitelist ipset rules applied"
+                ;;
+            "mixed")
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j MARK --set-mark 0x0003
+                msg "MIXED: fakeip whitelist ipset rules applied"
+                ;;
+            *)
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                msg "TPROXY: fakeip whitelist ipset rules applied"
+                ;;
+        esac
+    fi
 }
 
 # For iptables - apply interface exclusion rules in output chain
@@ -1144,6 +1242,12 @@ apply_iptables_output_rules() {
         iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark "$udp_mark"
         msg "OUTPUT: Marking applied for all traffic (UDP mark: $udp_mark)"
     fi
+    # Additionally mark locally generated traffic to fakeip whitelist IP-CIDR entries
+    if [ "$fake_ip_filter_mode" = "whitelist" ] && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+        iptables -t mangle -A CLASH_LOCAL -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j MARK --set-mark 0x0001
+        iptables -t mangle -A CLASH_LOCAL -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j MARK --set-mark "$udp_mark"
+        msg "OUTPUT: fakeip whitelist ipset rules applied (UDP mark: $udp_mark)"
+    fi
 
     msg "Output chain rules applied"
 }
@@ -1179,6 +1283,14 @@ apply_nft_rules() {
         local nft_elements=$(echo "$server_ips" | tr '\n' ',' | sed 's/,$//')
         nft add element inet clash proxy_servers "{ $nft_elements }"
         msg "Populated proxy_servers set with $(echo "$server_ips" | wc -l | xargs) IPs."
+    fi
+
+    # Create nft set for fakeip whitelist IP-CIDR entries (always created so rules can reference it)
+    nft add set inet clash fakeip_whitelist '{ type ipv4_addr; flags interval; auto-merge; }'
+    if [ "$fake_ip_filter_mode" = "whitelist" ] && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+        local nft_wl_elements=$(echo "$FAKEIP_WHITELIST_IPS" | tr '\n' ',' | sed 's/,$//')
+        nft add element inet clash fakeip_whitelist "{ $nft_wl_elements }"
+        msg "Populated fakeip_whitelist nft set with $(echo "$FAKEIP_WHITELIST_IPS" | wc -l | xargs) entries."
     fi
 
     case "$MODE" in
@@ -1229,6 +1341,11 @@ apply_iptables_rules() {
     iptables -t mangle -N CLASH 2>/dev/null
     iptables -t mangle -N CLASH_LOCAL 2>/dev/null
     iptables -t mangle -N CLASH_PROCESS 2>/dev/null
+
+    # Set up fakeip whitelist ipset so that rules referencing it by name always succeed
+    if [ "$fake_ip_filter_mode" = "whitelist" ] && hash ipset 2>/dev/null; then
+        ensure_fakeip_ipset && populate_fakeip_ipset_from_file
+    fi
 
     # Exclude forwarded traffic (DNAT) from TPROXY to prevent conflicts.
     # This ensures that incoming connections for port forwarding are not hijacked
@@ -1404,6 +1521,63 @@ teardown_routing_rules() {
     ip rule del fwmark 0x0003 table 101 2>/dev/null
 }
 
+# Atomically refresh the fakeip whitelist IP-CIDR set contents (nft set or ipset)
+# without restarting mihomo or rebuilding firewall chains.
+update_fakeip_whitelist_sets() {
+    msg "Updating fakeip whitelist IP-CIDR sets..."
+    load_all_settings_once
+
+    local fake_ip_config fake_ip_range fake_ip_filter_mode
+    fake_ip_config=$(extract_fake_ip_config)
+    if [ -n "$fake_ip_config" ]; then
+        fake_ip_range="${fake_ip_config%|*}"
+        fake_ip_filter_mode="${fake_ip_config#*|}"
+    fi
+
+    if [ "$fake_ip_filter_mode" != "whitelist" ]; then
+        msg "fake-ip-filter-mode is '${fake_ip_filter_mode:-blacklist}', not 'whitelist' — clearing fakeip sets if they exist"
+        if hash nft 2>/dev/null && nft list set inet clash fakeip_whitelist >/dev/null 2>&1; then
+            nft flush set inet clash fakeip_whitelist 2>/dev/null
+            msg "nft fakeip_whitelist set cleared"
+        fi
+        if hash ipset 2>/dev/null && ipset list "$FAKEIP_IPSET_NAME" >/dev/null 2>&1; then
+            ipset flush "$FAKEIP_IPSET_NAME" 2>/dev/null
+            msg "ipset $FAKEIP_IPSET_NAME cleared"
+        fi
+        return 0
+    fi
+
+    FAKEIP_WHITELIST_IPS=$(read_fakeip_whitelist_entries)
+
+    if hash nft 2>/dev/null; then
+        if nft list set inet clash fakeip_whitelist >/dev/null 2>&1; then
+            nft flush set inet clash fakeip_whitelist
+            if [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+                local nft_elements=$(echo "$FAKEIP_WHITELIST_IPS" | tr '\n' ',' | sed 's/,$//')
+                nft add element inet clash fakeip_whitelist "{ $nft_elements }"
+                msg "Updated nft fakeip_whitelist set: $(echo "$FAKEIP_WHITELIST_IPS" | wc -l | xargs) entries"
+            else
+                msg "Fakeip whitelist file is empty, nft set cleared"
+            fi
+        else
+            msg "WARNING: nft set inet clash fakeip_whitelist not found — is the clash-rules firewall active?"
+            return 1
+        fi
+    elif hash iptables 2>/dev/null; then
+        if hash ipset 2>/dev/null; then
+            ensure_fakeip_ipset && populate_fakeip_ipset_from_file
+        else
+            msg "ERROR: ipset not available for iptables fakeip whitelist update"
+            return 1
+        fi
+    else
+        msg "ERROR: Neither nftables nor iptables found"
+        return 1
+    fi
+
+    msg "Fakeip whitelist sets updated successfully"
+}
+
 start() {
     msg "Starting Clash rules script"
 
@@ -1424,6 +1598,19 @@ start() {
     if [ -n "$fake_ip_config" ]; then
         fake_ip_range="${fake_ip_config%|*}"
         fake_ip_filter_mode="${fake_ip_config#*|}"
+    fi
+
+    # Expose filter mode globally so helper functions (apply_nft_marking_mangle etc.) can read it
+    FAKE_IP_FILTER_MODE="${fake_ip_filter_mode:-blacklist}"
+
+    # Pre-load fakeip whitelist IP-CIDR entries when in whitelist mode
+    if [ "$fake_ip_filter_mode" = "whitelist" ]; then
+        FAKEIP_WHITELIST_IPS=$(read_fakeip_whitelist_entries)
+        if [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+            msg "Loaded fakeip whitelist: $(echo "$FAKEIP_WHITELIST_IPS" | wc -l | xargs) IP/CIDR entries from $FAKEIP_WHITELIST_FILE"
+        else
+            msg "Fakeip whitelist file is empty or not found at $FAKEIP_WHITELIST_FILE"
+        fi
     fi
 
     if [ -n "$server_ips" ]; then
@@ -1530,8 +1717,11 @@ case "$1" in
         fi
         update_rules
         ;;
+    update-ip-whitelist)
+        update_fakeip_whitelist_sets
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|update}"
+        echo "Usage: $0 {start|stop|restart|update|update-ip-whitelist}"
         exit 1
         ;;
 esac

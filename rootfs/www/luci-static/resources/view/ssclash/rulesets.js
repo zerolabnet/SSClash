@@ -5,6 +5,7 @@
 
 const editors = {};
 const rulesetPath = '/opt/clash/lst/';
+const FAKEIP_WHITELIST_FILENAME = 'fakeip-whitelist-ipcidr.txt';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -139,24 +140,99 @@ function handleCreate(existingRulesets) {
     ]);
 }
 
+async function detectFakeIpWhitelistMode() {
+    try {
+        const configContent = await L.resolveDefault(fs.read('/opt/clash/config.yaml'), '');
+        if (!configContent) return false;
+
+        let inDns = false;
+        let dnsEnabled = false;
+        let isEnhancedFakeIp = false;
+        let filterMode = 'blacklist';
+
+        for (const line of configContent.split('\n')) {
+            const trimmed = line.trim();
+            if (trimmed.match(/^dns:\s*$/)) { inDns = true; continue; }
+            if (inDns && trimmed.length > 0 && !line.match(/^[\s]/)) { inDns = false; }
+            if (!inDns) continue;
+            if (trimmed.match(/^enable:\s*true/)) dnsEnabled = true;
+            if (trimmed.match(/^enhanced-mode:\s*fake-ip/)) isEnhancedFakeIp = true;
+            const modeMatch = trimmed.match(/^fake-ip-filter-mode:\s*(\S+)/);
+            if (modeMatch) filterMode = modeMatch[1].toLowerCase().replace(/['"]/g, '');
+        }
+
+        return dnsEnabled && isEnhancedFakeIp && filterMode === 'whitelist';
+    } catch (e) {
+        console.error('Failed to detect fake-ip-filter-mode:', e);
+        return false;
+    }
+}
+
+async function handleSaveFakeIpWhitelist() {
+    const editor = editors[FAKEIP_WHITELIST_FILENAME];
+    if (!editor) {
+        ui.addNotification(null, E('p', _('Editor not initialized.')), 'error');
+        return;
+    }
+    ui.showModal(_('Saving...'), [ E('p', { 'class': 'spinning' }, _('Please wait')) ]);
+
+    try {
+        const content = editor.getValue().trim();
+        const finalContent = content ? content + '\n' : '';
+        await fs.write(`${rulesetPath}${FAKEIP_WHITELIST_FILENAME}`, finalContent);
+
+        const result = await fs.exec('/opt/clash/bin/clash-rules', ['update-ip-whitelist']);
+        if (result && result.code === 0) {
+            ui.addNotification(null, E('p', _('IP-CIDR whitelist saved and firewall rules updated.')), 'success');
+        } else {
+            const errMsg = (result && (result.stderr || result.stdout || '').trim()) || _('unknown error');
+            ui.addNotification(null, E('p', _('IP-CIDR whitelist saved, but firewall update failed: %s').format(errMsg)), 'warning');
+        }
+    } catch (e) {
+        ui.addNotification(null, E('p', _('Failed to save IP-CIDR whitelist: %s').format(e.message)), 'error');
+    } finally {
+        ui.hideModal();
+    }
+}
+
 return view.extend({
-    load: function() {
-        return fs.list(rulesetPath)
-            .then(files => {
-                const txtFiles = files.filter(file => file.name.endsWith('.txt'));
-                const promises = txtFiles.map(file =>
-                    fs.read_direct(`${rulesetPath}${file.name}`)
-                      .then(content => ({ name: file.name, content: content || '' }))
-                );
-                return Promise.all(promises);
-            })
-            .catch(err => {
-                ui.addNotification(null, E('p', _('Cannot read ruleset directory: %s').format(err.message)));
-                return [];
-            });
+    load: async function() {
+        const isWhitelistMode = await detectFakeIpWhitelistMode();
+
+        let whitelistContent = '';
+        if (isWhitelistMode) {
+            try {
+                const existing = await L.resolveDefault(fs.read(`${rulesetPath}${FAKEIP_WHITELIST_FILENAME}`), null);
+                if (existing === null) {
+                    await fs.write(`${rulesetPath}${FAKEIP_WHITELIST_FILENAME}`, '');
+                } else {
+                    whitelistContent = existing;
+                }
+            } catch (e) {
+                console.warn('Failed to access fakeip whitelist file:', e);
+            }
+        }
+
+        try {
+            const files = await fs.list(rulesetPath);
+            const txtFiles = files.filter(file =>
+                file.name.endsWith('.txt') && file.name !== FAKEIP_WHITELIST_FILENAME
+            );
+            const promises = txtFiles.map(file =>
+                fs.read_direct(`${rulesetPath}${file.name}`)
+                  .then(content => ({ name: file.name, content: content || '' }))
+            );
+            const rulesets = await Promise.all(promises);
+            return { isWhitelistMode, whitelistContent, rulesets };
+        } catch (err) {
+            ui.addNotification(null, E('p', _('Cannot read ruleset directory: %s').format(err.message)));
+            return { isWhitelistMode, whitelistContent, rulesets: [] };
+        }
     },
 
-    render: function(rulesets = []) {
+    render: function(data) {
+        const { isWhitelistMode, whitelistContent, rulesets } = data || { isWhitelistMode: false, whitelistContent: '', rulesets: [] };
+
         const sections = rulesets.map(ruleset => {
             const filename = ruleset.name;
 
@@ -196,6 +272,36 @@ return view.extend({
             .cbi-section-title.active::before { transform: rotate(90deg); }
         `);
 
+        const whitelistSections = [];
+        if (isWhitelistMode) {
+            const editorId = `editor-${FAKEIP_WHITELIST_FILENAME}`;
+
+            const whitelistBlock = E('div', {
+                'style': 'padding: 10px 15px; border: 2px solid #0066cc; border-radius: 5px; background-color: #f0f8ff; margin: 15px 0;'
+            }, [
+                E('div', { 'style': 'display: flex; align-items: center; margin-bottom: 8px;' }, [
+                    E('span', {
+                        'style': 'display: inline-block; background: #0066cc; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; margin-right: 10px; white-space: nowrap;'
+                    }, _('TECHNICAL')),
+                    E('h3', { 'style': 'margin: 0; color: #0066cc;' },
+                        _('IP-CIDR List (fake-ip whitelist mode)'))
+                ]),
+                E('p', { 'class': 'cbi-section-descr', 'style': 'margin-bottom: 10px;' },
+                    _('This list is used by the firewall (nftables/iptables) to mark traffic to specified IPs and subnets for proxying in fake-ip whitelist mode. Enter one IPv4 address or CIDR per line (e.g. 8.8.8.8 or 1.2.3.0/24). Lines starting with # are treated as comments. Saving applies changes immediately without restarting Mihomo.')
+                ),
+                E('div', { 'id': editorId, 'style': 'min-height: 150px; height: 350px; margin-bottom: 10px; border-radius: 4px;' }),
+                E('div', { 'style': 'text-align: center;' }, [
+                    E('button', { 'class': 'btn', 'click': handleSaveFakeIpWhitelist }, _('Save'))
+                ])
+            ]);
+
+            whitelistSections.push(whitelistBlock);
+
+            setTimeout(() => {
+                initializeAceEditor(FAKEIP_WHITELIST_FILENAME, whitelistContent || '');
+            }, 100);
+        }
+
         return E('div', {}, [
             style,
             E('div', { class: 'cbi-section' }, [
@@ -210,6 +316,7 @@ return view.extend({
                     _('Here you can manage local lists for use in rule-providers. Example usage in your config.yaml: type: file, format: text, path: ./lst/your-list.txt')
                 ])
             ]),
+            ...whitelistSections,
             ...sections
         ]);
     },
