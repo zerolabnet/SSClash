@@ -425,6 +425,7 @@ async function loadSettings() {
             autoDetectLan: true,
             autoDetectWan: true,
             blockQuic: true,
+            useTmpfsRules: true,
             detectedLan: '',
             detectedWan: '',
             includedInterfaces: [],
@@ -443,6 +444,7 @@ async function loadSettings() {
                     case 'AUTO_DETECT_LAN': settings.autoDetectLan = value.trim() === 'true'; break;
                     case 'AUTO_DETECT_WAN': settings.autoDetectWan = value.trim() === 'true'; break;
                     case 'BLOCK_QUIC': settings.blockQuic = value.trim() === 'true'; break;
+                    case 'USE_TMPFS_RULES': settings.useTmpfsRules = value.trim() === 'true'; break;
                     case 'DETECTED_LAN': settings.detectedLan = value.trim(); break;
                     case 'DETECTED_WAN': settings.detectedWan = value.trim(); break;
                     case 'INCLUDED_INTERFACES':
@@ -472,6 +474,7 @@ async function loadSettings() {
             autoDetectLan: true,
             autoDetectWan: true,
             blockQuic: true,
+            useTmpfsRules: true,
             detectedLan: '',
             detectedWan: '',
             includedInterfaces: [],
@@ -500,7 +503,7 @@ async function loadInterfacesByMode(mode) {
     }
 }
 
-async function saveSettings(mode, proxyMode, autoDetectLan, autoDetectWan, blockQuic, interfaces, enableHwid, hwidUserAgent, hwidDeviceOS) {
+async function saveSettings(mode, proxyMode, autoDetectLan, autoDetectWan, blockQuic, useTmpfsRules, interfaces, enableHwid, hwidUserAgent, hwidDeviceOS) {
     try {
         let detectedLan = '';
         let detectedWan = '';
@@ -529,6 +532,7 @@ PROXY_MODE=${proxyMode}
 AUTO_DETECT_LAN=${autoDetectLan}
 AUTO_DETECT_WAN=${autoDetectWan}
 BLOCK_QUIC=${blockQuic}
+USE_TMPFS_RULES=${useTmpfsRules}
 DETECTED_LAN=${detectedLan}
 DETECTED_WAN=${detectedWan}
 INCLUDED_INTERFACES=${includedInterfaces.join(',')}
@@ -1259,7 +1263,7 @@ function createInterfaceSelector(interfaces, selectedInterfaces, currentMode) {
     return container;
 }
 
-function createAdditionalSettings(blockQuic, enableHwid, hwidUserAgent, hwidDeviceOS) {
+function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUserAgent, hwidDeviceOS) {
     const container = E('div', { 'class': 'cbi-section' });
 
     container.appendChild(E('h3', _('Additional Settings')));
@@ -1283,8 +1287,26 @@ function createAdditionalSettings(blockQuic, enableHwid, hwidUserAgent, hwidDevi
     settingsContainer.appendChild(E('div', { 'class': 'cbi-section-descr', 'style': 'font-size: 12px;' },
         _('When enabled, blocks QUIC traffic on UDP port 443. This can improve proxy effectiveness for some services like YouTube.')));
 
+    const tmpfsCheckbox = E('input', {
+        'type': 'checkbox',
+        'id': 'use_tmpfs_rules'
+    });
+
+    const tmpfsLabel = E('label', {
+        'for': 'use_tmpfs_rules',
+        'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; cursor: pointer;'
+    }, [
+        tmpfsCheckbox,
+        E('span', '💾 ' + _('Store rules and proxy providers in RAM (tmpfs)'))
+    ]);
+
+    settingsContainer.appendChild(tmpfsLabel);
+    settingsContainer.appendChild(E('div', { 'class': 'cbi-section-descr', 'style': 'font-size: 12px;' },
+        _('When enabled, rulesets and proxy-providers directories are placed on tmpfs for faster access (at the cost of using RAM). Disable to keep them on persistent storage.')));
+
     setTimeout(() => {
         blockQuicCheckbox.checked = blockQuic;
+        tmpfsCheckbox.checked = useTmpfsRules;
     }, 0);
 
     const hwidCheckbox = E('input', {
@@ -1482,6 +1504,7 @@ return view.extend({
         const interfaceSelector = createInterfaceSelector(interfaces, selectedInterfaces, settings.mode);
         const additionalSettings = createAdditionalSettings(
             settings.blockQuic,
+            settings.useTmpfsRules,
             settings.enableHwid,
             settings.hwidUserAgent,
             settings.hwidDeviceOS
@@ -1597,6 +1620,7 @@ return view.extend({
                 const autoDetectLan = autoDetectOptions.querySelector('#auto_detect_lan').checked;
                 const autoDetectWan = autoDetectOptions.querySelector('#auto_detect_wan').checked;
                 const blockQuic = additionalSettings.querySelector('#block_quic').checked;
+                const useTmpfsRules = additionalSettings.querySelector('#use_tmpfs_rules')?.checked ?? true;
                 const enableHwid = additionalSettings.querySelector('#enable_hwid')?.checked || false;
                 const hwidUserAgent = additionalSettings.querySelector('#hwid_user_agent')?.value || 'SSClash';
                 const hwidDeviceOS = additionalSettings.querySelector('#hwid_device_os')?.value || 'OpenWrt';
@@ -1613,6 +1637,7 @@ return view.extend({
                     autoDetectLan,
                     autoDetectWan,
                     blockQuic,
+                    useTmpfsRules,
                     selected,
                     enableHwid,
                     hwidUserAgent,

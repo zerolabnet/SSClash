@@ -11,6 +11,13 @@ RULESET_TMPFS="/tmp/clash/ruleset"
 RULESET_LINK="${CLASH_DIR}/ruleset"
 PROXY_PROVIDERS_TMPFS="/tmp/clash/proxy_providers"
 PROXY_PROVIDERS_LINK="${CLASH_DIR}/proxy_providers"
+SETTINGS_FILE="${CLASH_DIR}/settings"
+USE_TMPFS_RULES="true"
+
+if [ -f "$SETTINGS_FILE" ]; then
+	tmpfs_val="$(grep -m1 '^USE_TMPFS_RULES=' "$SETTINGS_FILE" 2>/dev/null | cut -d'=' -f2)"
+	[ "$tmpfs_val" = "false" ] && USE_TMPFS_RULES="false"
+fi
 
 # Function to log messages
 msg() {
@@ -33,40 +40,65 @@ check_files() {
 
 # Function to set up clash directories
 setup_clash_directories() {
-	# Setup ruleset
-	if [ ! -d "$RULESET_TMPFS" ]; then
-		if ! mkdir -p "$RULESET_TMPFS"; then
-			msg "ERROR: Failed to create directory $RULESET_TMPFS"
-			return 1
+	if [ "$USE_TMPFS_RULES" = "true" ]; then
+		# Setup ruleset in tmpfs with symlink from CLASH_DIR
+		if [ ! -d "$RULESET_TMPFS" ]; then
+			if ! mkdir -p "$RULESET_TMPFS"; then
+				msg "ERROR: Failed to create directory $RULESET_TMPFS"
+				return 1
+			fi
+			msg "Created directory '$RULESET_TMPFS'"
 		fi
-		msg "Created directory '$RULESET_TMPFS'"
-	fi
 
-	if [ ! -L "$RULESET_LINK" ] || [ "$(readlink "$RULESET_LINK")" != "$RULESET_TMPFS" ]; then
-		rm -rf "$RULESET_LINK"
-		if ! ln -s "$RULESET_TMPFS" "$RULESET_LINK"; then
-			msg "ERROR: Failed to create symlink from '$RULESET_TMPFS' to '$RULESET_LINK'"
-			return 1
+		if [ ! -L "$RULESET_LINK" ] || [ "$(readlink "$RULESET_LINK")" != "$RULESET_TMPFS" ]; then
+			rm -rf "$RULESET_LINK"
+			if ! ln -s "$RULESET_TMPFS" "$RULESET_LINK"; then
+				msg "ERROR: Failed to create symlink from '$RULESET_TMPFS' to '$RULESET_LINK'"
+				return 1
+			fi
+			msg "Created symlink from '$RULESET_TMPFS' to '$RULESET_LINK'"
 		fi
-		msg "Created symlink from '$RULESET_TMPFS' to '$RULESET_LINK'"
-	fi
 
-	# Setup proxy_providers
-	if [ ! -d "$PROXY_PROVIDERS_TMPFS" ]; then
-		if ! mkdir -p "$PROXY_PROVIDERS_TMPFS"; then
-			msg "ERROR: Failed to create directory $PROXY_PROVIDERS_TMPFS"
-			return 1
+		# Setup proxy_providers in tmpfs with symlink from CLASH_DIR
+		if [ ! -d "$PROXY_PROVIDERS_TMPFS" ]; then
+			if ! mkdir -p "$PROXY_PROVIDERS_TMPFS"; then
+				msg "ERROR: Failed to create directory $PROXY_PROVIDERS_TMPFS"
+				return 1
+			fi
+			msg "Created directory '$PROXY_PROVIDERS_TMPFS'"
 		fi
-		msg "Created directory '$PROXY_PROVIDERS_TMPFS'"
-	fi
 
-	if [ ! -L "$PROXY_PROVIDERS_LINK" ] || [ "$(readlink "$PROXY_PROVIDERS_LINK")" != "$PROXY_PROVIDERS_TMPFS" ]; then
-		rm -rf "$PROXY_PROVIDERS_LINK"
-		if ! ln -s "$PROXY_PROVIDERS_TMPFS" "$PROXY_PROVIDERS_LINK"; then
-			msg "ERROR: Failed to create symlink from '$PROXY_PROVIDERS_TMPFS' to '$PROXY_PROVIDERS_LINK'"
-			return 1
+		if [ ! -L "$PROXY_PROVIDERS_LINK" ] || [ "$(readlink "$PROXY_PROVIDERS_LINK")" != "$PROXY_PROVIDERS_TMPFS" ]; then
+			rm -rf "$PROXY_PROVIDERS_LINK"
+			if ! ln -s "$PROXY_PROVIDERS_TMPFS" "$PROXY_PROVIDERS_LINK"; then
+				msg "ERROR: Failed to create symlink from '$PROXY_PROVIDERS_TMPFS' to '$PROXY_PROVIDERS_LINK'"
+				return 1
+			fi
+			msg "Created symlink from '$PROXY_PROVIDERS_TMPFS' to '$PROXY_PROVIDERS_LINK'"
 		fi
-		msg "Created symlink from '$PROXY_PROVIDERS_TMPFS' to '$PROXY_PROVIDERS_LINK'"
+	else
+		# Use persistent storage under CLASH_DIR without tmpfs or symlinks
+		if [ -L "$RULESET_LINK" ]; then
+			rm -f "$RULESET_LINK"
+		fi
+		if [ ! -d "$RULESET_LINK" ]; then
+			if ! mkdir -p "$RULESET_LINK"; then
+				msg "ERROR: Failed to create persistent ruleset directory $RULESET_LINK"
+				return 1
+			fi
+			msg "Created persistent ruleset directory '$RULESET_LINK'"
+		fi
+
+		if [ -L "$PROXY_PROVIDERS_LINK" ]; then
+			rm -f "$PROXY_PROVIDERS_LINK"
+		fi
+		if [ ! -d "$PROXY_PROVIDERS_LINK" ]; then
+			if ! mkdir -p "$PROXY_PROVIDERS_LINK"; then
+				msg "ERROR: Failed to create persistent proxy_providers directory $PROXY_PROVIDERS_LINK"
+				return 1
+			fi
+			msg "Created persistent proxy_providers directory '$PROXY_PROVIDERS_LINK'"
+		fi
 	fi
 
 	return 0

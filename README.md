@@ -69,19 +69,19 @@ cd /opt/clash/bin
 For **amd64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.14/mihomo-linux-amd64-compatible-v1.19.14.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.20/mihomo-linux-amd64-compatible-v1.19.20.gz -o clash.gz
 ```
 
 For **arm64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.14/mihomo-linux-arm64-v1.19.14.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.20/mihomo-linux-arm64-v1.19.20.gz -o clash.gz
 ```
 
 For **mipsel_24kc** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.14/mihomo-linux-mipsle-softfloat-v1.19.14.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.20/mihomo-linux-mipsle-softfloat-v1.19.20.gz -o clash.gz
 ```
 
 Need a different architecture? Visit the [MetaCubeX Release Page](https://github.com/MetaCubeX/mihomo/releases) and choose the one that matches your device.
