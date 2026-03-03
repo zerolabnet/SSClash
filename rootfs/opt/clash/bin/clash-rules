@@ -1098,6 +1098,12 @@ apply_nft_rules() {
     nft add chain inet clash output '{ type route hook output priority mangle; policy accept; }'
     nft add chain inet clash CLASH_MARK
 
+    # Exclude forwarded traffic (DNAT) from TPROXY to prevent conflicts.
+    # This ensures that incoming connections for port forwarding are not hijacked
+    # by the transparent proxy and can reach their internal destination.
+    nft add rule inet clash mangle ct status dnat return
+    msg "DNAT traffic exclusion rule applied"
+
     # Create a named set for proxy server IPs for efficient management
     nft add set inet clash proxy_servers '{ type ipv4_addr; flags interval; auto-merge; }'
     # Populate the set with server IPs
