@@ -4,7 +4,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ssclash
-PKG_VERSION:=3.4.0
+PKG_VERSION:=3.5.0
 PKG_RELEASE:=1
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
@@ -71,9 +71,6 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./rootfs/etc/init.d/clash $(1)/etc/init.d/
 
-	$(INSTALL_DIR) $(1)/etc/hotplug.d/net
-	$(INSTALL_BIN) ./rootfs/etc/hotplug.d/net/50-ssclash $(1)/etc/hotplug.d/net/
-
 	$(INSTALL_DIR) $(1)/opt/clash/bin
 	$(INSTALL_BIN) ./rootfs/opt/clash/bin/clash-rules $(1)/opt/clash/bin/
 
@@ -118,7 +115,6 @@ define Package/$(PKG_NAME)/postrm
 	rm -rf /tmp/clash
 	rm -rf /www/luci-static/resources/view/ssclash
 	rm -f /usr/lib/lua/luci/i18n/ssclash.*.lmo
-	rm -f /etc/hotplug.d/net/50-ssclash
 }
 endef
 

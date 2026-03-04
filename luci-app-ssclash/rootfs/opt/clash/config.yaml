@@ -1,8 +1,8 @@
 mode: rule
+tproxy-port: 7894
 ipv6: false
 log-level: error
 allow-lan: false
-tproxy-port: 7894
 unified-delay: true
 tcp-concurrent: true
 external-controller: 0.0.0.0:9090

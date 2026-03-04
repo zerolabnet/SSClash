@@ -263,6 +263,21 @@ reload_service() {
 	msg "Clash service reloaded"
 }
 
+service_started() {
+	# Called by some OpenWrt versions after the service process has started.
+	# The primary mechanism is _spawn_tun_route_daemon() in clash-rules; this is a safety re-check.
+	local proxy_mode=""
+	[ -f "$SETTINGS_FILE" ] && proxy_mode=$(grep '^PROXY_MODE=' "$SETTINGS_FILE" | cut -d= -f2 | tr -d '[:space:]')
+	case "$proxy_mode" in
+		mixed|tun)
+			if ip link show clash-tun > /dev/null 2>&1; then
+				[ -f "$CLASH_RULES" ] && "$CLASH_RULES" tun_route_setup
+				msg "service_started: TUN route verified"
+			fi
+			;;
+	esac
+}
+
 service_triggers() {
 	procd_add_reload_trigger "clash"
 }

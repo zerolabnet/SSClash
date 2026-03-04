@@ -357,7 +357,9 @@ function transformProxyMode(content, proxyMode) {
                 '  enable: true',
                 '  device: clash-tun',
                 '  stack: gvisor',
-                '  auto-detect-interface: true'
+                '  auto-route: false',
+                '  auto-redirect: false',
+                '  auto-detect-interface: false'
             ];
             break;
         case 'mixed':
