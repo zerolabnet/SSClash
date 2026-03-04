@@ -362,13 +362,15 @@ function transformProxyMode(content, proxyMode) {
             break;
         case 'mixed':
             configToInsert = [
-                '# Proxy Mode: MIXED (TCP via TPROXY, UDP via TUN)',
+                '# Proxy Mode: MIXED (TCP via TPROXY port 7894, UDP via TUN/gVisor)',
                 'tproxy-port: 7894',
                 'tun:',
                 '  enable: true',
                 '  device: clash-tun',
                 '  stack: gvisor',
-                '  auto-detect-interface: true'
+                '  auto-route: false',
+                '  auto-redirect: false',
+                '  auto-detect-interface: false'
             ];
             break;
     }

@@ -4,10 +4,15 @@
 #
 # clash-rules start runs BEFORE the Clash binary is launched by procd, so
 # `clash-tun` does not exist yet when setup_routing_rules() executes and
-# `ip route add default dev clash-tun table 100/101` silently fails.
+# `ip route add default dev clash-tun table N` silently fails.
 # This script fires when the kernel announces the new network interface and
 # re-applies the missing route entry so that fwmark-based policy routing
 # can deliver traffic to clash-tun.
+#
+# Routing table assignment:
+#   TUN mode:   fwmark 0x0001 → table 100 → clash-tun
+#   MIXED mode: fwmark 0x0001 → table 100 → lo (TPROXY, set by clash-rules)
+#               fwmark 0x0003 → table 101 → clash-tun (UDP TUN, set here)
 
 SETTINGS_FILE="/opt/clash/settings"
 
