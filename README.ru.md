@@ -40,8 +40,8 @@ opkg install iptables-mod-tproxy
 Загрузите пакет SSClash и установите его.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.4.0/luci-app-ssclash_3.4.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.4.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_3.4.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.5.0/luci-app-ssclash_3.5.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.5.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_3.5.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
 
