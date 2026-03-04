@@ -935,6 +935,45 @@ apply_nft_tproxy_proxy() {
     esac
 }
 
+# For nftables - allow forwarding to/from clash-tun (TUN/MIXED mode)
+# Injects accept rules at the top of inet fw4 forward chain so that traffic
+# forwarded between LAN and clash-tun is not dropped by the zone-based firewall.
+# Falls back to an inet clash forward base chain when fw4 is absent.
+apply_nft_tun_forward_rules() {
+    case "$PROXY_MODE" in
+        "tun"|"mixed") ;;
+        *) return 0 ;;
+    esac
+
+    if nft list table inet fw4 >/dev/null 2>&1; then
+        nft insert rule inet fw4 forward iifname "clash-tun" accept comment "ssclash-fwd" 2>/dev/null
+        nft insert rule inet fw4 forward oifname "clash-tun" accept comment "ssclash-fwd" 2>/dev/null
+        msg "Inserted clash-tun forward rules into inet fw4 (TUN/MIXED mode)"
+    else
+        # No fw4 table — add a standalone forward base chain in our own table
+        nft add chain inet clash forward '{ type filter hook forward priority -1; policy accept; }' 2>/dev/null
+        nft add rule inet clash forward iifname "clash-tun" accept 2>/dev/null
+        nft add rule inet clash forward oifname "clash-tun" accept 2>/dev/null
+        msg "Added clash-tun forward rules in inet clash (no fw4 found)"
+    fi
+}
+
+# For nftables - remove the forward rules added by apply_nft_tun_forward_rules
+teardown_nft_tun_forward_rules() {
+    # Remove rules injected into inet fw4 forward (identified by comment)
+    if nft list table inet fw4 >/dev/null 2>&1; then
+        nft -a list chain inet fw4 forward 2>/dev/null \
+            | awk '/ssclash-fwd/ { for(i=1;i<=NF;i++) if($i=="handle") { print $(i+1); break } }' \
+            | while IFS= read -r handle; do
+                [ -n "$handle" ] && nft delete rule inet fw4 forward handle "$handle" 2>/dev/null
+              done
+        msg "Removed clash-tun forward rules from inet fw4"
+    fi
+    # The inet clash table (including any forward chain we may have added) is
+    # deleted wholesale by the nft delete table inet clash call in stop(), so
+    # no extra cleanup is needed here for the fallback path.
+}
+
 # For nftables - apply interface exclusion rules in output chain
 apply_nft_interface_exclusion_output() {
     local excluded_interfaces="$1"
@@ -1252,6 +1291,27 @@ apply_iptables_output_rules() {
     msg "Output chain rules applied"
 }
 
+# For iptables - allow forwarding to/from clash-tun (TUN/MIXED mode)
+# Inserts accept rules at the top of the filter FORWARD chain so that traffic
+# forwarded between LAN and clash-tun is not dropped by fw3/iptables rules.
+apply_iptables_tun_forward_rules() {
+    case "$PROXY_MODE" in
+        "tun"|"mixed") ;;
+        *) return 0 ;;
+    esac
+
+    iptables -t filter -I FORWARD 1 -i clash-tun -j ACCEPT 2>/dev/null
+    iptables -t filter -I FORWARD 1 -o clash-tun -j ACCEPT 2>/dev/null
+    msg "Inserted clash-tun FORWARD rules (iptables, TUN/MIXED mode)"
+}
+
+# For iptables - remove the FORWARD rules added by apply_iptables_tun_forward_rules
+teardown_iptables_tun_forward_rules() {
+    iptables -t filter -D FORWARD -i clash-tun -j ACCEPT 2>/dev/null
+    iptables -t filter -D FORWARD -o clash-tun -j ACCEPT 2>/dev/null
+    msg "Removed clash-tun FORWARD rules (iptables)"
+}
+
 # Apply nftables rules dynamically
 apply_nft_rules() {
     local server_ips="$1"
@@ -1328,6 +1388,9 @@ apply_nft_rules() {
     # Apply TPROXY rules
     apply_nft_tproxy_proxy
 
+    # Allow forwarding between LAN and clash-tun in TUN/MIXED mode
+    apply_nft_tun_forward_rules
+
     msg "nftables rules applied successfully"
 }
 
@@ -1385,6 +1448,9 @@ apply_iptables_rules() {
     fi
 
     apply_iptables_tproxy_rules "$fake_ip_range"
+
+    # Allow forwarding between LAN and clash-tun in TUN/MIXED mode
+    apply_iptables_tun_forward_rules
 
     # Hook the main chains into the system. This is the entry point.
     iptables -t mangle -A PREROUTING -j CLASH
@@ -1672,10 +1738,12 @@ stop() {
     load_all_settings_once
 
     if hash nft 2>/dev/null; then
+        teardown_nft_tun_forward_rules
         nft delete table inet clash 2>/dev/null
         teardown_routing_rules
         msg "nftables rules removed successfully"
     elif hash iptables 2>/dev/null; then
+        teardown_iptables_tun_forward_rules
         if [ "$BLOCK_QUIC" = "true" ]; then
             iptables -t filter -D INPUT -p udp --dport 443 -j REJECT 2>/dev/null
             iptables -t filter -D FORWARD -p udp --dport 443 -j REJECT 2>/dev/null

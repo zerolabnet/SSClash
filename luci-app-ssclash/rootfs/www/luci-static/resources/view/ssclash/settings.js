@@ -356,7 +356,7 @@ function transformProxyMode(content, proxyMode) {
                 'tun:',
                 '  enable: true',
                 '  device: clash-tun',
-                '  stack: system',
+                '  stack: gvisor',
                 '  auto-detect-interface: true'
             ];
             break;
@@ -367,7 +367,7 @@ function transformProxyMode(content, proxyMode) {
                 'tun:',
                 '  enable: true',
                 '  device: clash-tun',
-                '  stack: system',
+                '  stack: gvisor',
                 '  auto-detect-interface: true'
             ];
             break;

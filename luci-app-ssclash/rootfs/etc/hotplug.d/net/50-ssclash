@@ -1,0 +1,36 @@
+#!/bin/sh
+
+# SSClash hotplug handler — fixes routing for TUN/MIXED mode.
+#
+# clash-rules start runs BEFORE the Clash binary is launched by procd, so
+# `clash-tun` does not exist yet when setup_routing_rules() executes and
+# `ip route add default dev clash-tun table 100/101` silently fails.
+# This script fires when the kernel announces the new network interface and
+# re-applies the missing route entry so that fwmark-based policy routing
+# can deliver traffic to clash-tun.
+
+SETTINGS_FILE="/opt/clash/settings"
+
+[ "$ACTION" = "add" ] || exit 0
+[ "$INTERFACE" = "clash-tun" ] || exit 0
+
+PROXY_MODE=""
+if [ -f "$SETTINGS_FILE" ]; then
+    PROXY_MODE=$(grep '^PROXY_MODE=' "$SETTINGS_FILE" | cut -d= -f2 | tr -d '[:space:]')
+fi
+
+case "$PROXY_MODE" in
+    tun)
+        ip route replace default dev clash-tun table 100 2>/dev/null
+        logger -p daemon.info -st "ssclash-hotplug" \
+            "clash-tun appeared: added route default dev clash-tun table 100 (TUN mode)"
+        ;;
+    mixed)
+        ip route replace default dev clash-tun table 101 2>/dev/null
+        logger -p daemon.info -st "ssclash-hotplug" \
+            "clash-tun appeared: added route default dev clash-tun table 101 (MIXED mode UDP)"
+        ;;
+    *)
+        # TPROXY mode does not use clash-tun for routing; nothing to do.
+        ;;
+esac
