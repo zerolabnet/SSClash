@@ -1853,8 +1853,19 @@ case "$1" in
     tun_route_setup)
         tun_route_setup
         ;;
+    tun_route_watch)
+        # Spawn a TUN route watcher daemon for the current proxy mode.
+        # Called on every procd (re)start so that the policy-routing table entry
+        # is restored even when Mihomo is respawned without a full clash-rules restart.
+        load_all_settings_once
+        case "$PROXY_MODE" in
+            "tun")   _spawn_tun_route_daemon 100 ;;
+            "mixed") _spawn_tun_route_daemon 101 ;;
+            *) msg "tun_route_watch: nothing to do for proxy mode '$PROXY_MODE'" ;;
+        esac
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|update|update-ip-whitelist|tun_route_setup}"
+        echo "Usage: $0 {start|stop|restart|update|update-ip-whitelist|tun_route_setup|tun_route_watch}"
         exit 1
         ;;
 esac

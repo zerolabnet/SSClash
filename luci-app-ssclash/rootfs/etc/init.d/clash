@@ -264,16 +264,19 @@ reload_service() {
 }
 
 service_started() {
-	# Called by some OpenWrt versions after the service process has started.
-	# The primary mechanism is _spawn_tun_route_daemon() in clash-rules; this is a safety re-check.
+	# Called by procd every time the service process (re)starts, including respawns.
+	# We must restore the clash-tun policy-routing entry here because:
+	#   - procd respawn only restarts the binary; it does NOT re-run start_service()
+	#   - the kernel removes "ip route … dev clash-tun" as soon as the interface disappears
+	#   - _spawn_tun_route_daemon() is only spawned during the initial clash-rules start
+	# Calling tun_route_watch spawns a background watcher that polls for clash-tun
+	# (up to 30 s) and issues "ip route replace" as soon as the interface appears.
 	local proxy_mode=""
 	[ -f "$SETTINGS_FILE" ] && proxy_mode=$(grep '^PROXY_MODE=' "$SETTINGS_FILE" | cut -d= -f2 | tr -d '[:space:]')
 	case "$proxy_mode" in
 		mixed|tun)
-			if ip link show clash-tun > /dev/null 2>&1; then
-				[ -f "$CLASH_RULES" ] && "$CLASH_RULES" tun_route_setup
-				msg "service_started: TUN route verified"
-			fi
+			[ -f "$CLASH_RULES" ] && "$CLASH_RULES" tun_route_watch
+			msg "service_started: TUN route watcher spawned (mode: $proxy_mode)"
 			;;
 	esac
 }
