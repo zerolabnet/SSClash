@@ -34,6 +34,10 @@ EXCLUDED_INTERFACES=""
 FAKE_IP_FILTER_MODE="blacklist"
 FAKEIP_WHITELIST_IPS=""
 
+# =============================================================================
+# SECTION: Utilities — logging, settings loader, IP helpers
+# =============================================================================
+
 # Function to log messages
 msg() {
     logger -p daemon.info -st "clash-rules[$$]" "$*"
@@ -282,6 +286,10 @@ decode_base64() {
     done
 }
 
+# =============================================================================
+# SECTION: Config parsing — proxy-providers, subscription IPs, fake-ip
+# =============================================================================
+
 # Function to extract proxy-providers configuration from config.yaml
 extract_proxy_providers() {
     if [ ! -f "$CONFIG_FILE" ]; then
@@ -469,7 +477,13 @@ cache_subscription_ips() {
 
         local current_time=$(date +%s)
         if [ $((current_time - lock_start)) -gt $lock_timeout ]; then
-            msg "WARNING: Could not acquire subscription lock, proceeding without cache"
+            msg "WARNING: Subscription lock timed out after ${lock_timeout}s, assuming stale lock"
+            # Attempt to remove the stale lock so future invocations are not blocked.
+            if rmdir "$SUBSCRIPTION_LOCK_FILE" 2>/dev/null; then
+                msg "Stale subscription lock removed successfully"
+            else
+                msg "WARNING: Could not remove stale lock at $SUBSCRIPTION_LOCK_FILE — manual cleanup may be required"
+            fi
             return 1
         fi
 
@@ -488,6 +502,10 @@ cache_subscription_ips() {
     rmdir "$SUBSCRIPTION_LOCK_FILE" 2>/dev/null
     return 0
 }
+
+# =============================================================================
+# SECTION: Interface detection — LAN/WAN discovery, include/exclude lists
+# =============================================================================
 
 # Function to check if chain exists (iptables only)
 chain_exists() {
@@ -1309,6 +1327,10 @@ teardown_iptables_tun_forward_rules() {
 }
 
 # Apply nftables rules dynamically
+# =============================================================================
+# SECTION: Firewall rules — nftables and iptables implementations
+# =============================================================================
+
 apply_nft_rules() {
     local server_ips="$1"
     local fake_ip_range="$2"
@@ -1459,6 +1481,10 @@ apply_iptables_rules() {
 }
 
 # This function intelligently updates subscription IPs without a full script restart
+# =============================================================================
+# SECTION: Rule update — refresh subscription cache and rebuild firewall rules
+# =============================================================================
+
 update_rules() {
     msg "Intelligently updating subscription IPs..."
 
@@ -1550,6 +1576,10 @@ update_rules() {
 # TUN:     fwmark 0x0001 → table 100 → clash-tun (route set here if already up, else by service_started)
 # MIXED:   fwmark 0x0001 → table 100 → lo  (TCP TPROXY)
 #          fwmark 0x0003 → table 101 → clash-tun (UDP TUN; route set here if already up, else by service_started)
+# =============================================================================
+# SECTION: Policy routing — ip rule / ip route tables for tproxy/tun/mixed
+# =============================================================================
+
 setup_routing_rules() {
     case "$PROXY_MODE" in
         "tun")
@@ -1624,6 +1654,10 @@ teardown_routing_rules() {
 
 # Atomically refresh the fakeip whitelist IP-CIDR set contents (nft set or ipset)
 # without restarting mihomo or rebuilding firewall chains.
+# =============================================================================
+# SECTION: Fake-IP whitelist — ipset/nft set management for CIDR exclusions
+# =============================================================================
+
 update_fakeip_whitelist_sets() {
     msg "Updating fakeip whitelist IP-CIDR sets..."
     load_all_settings_once
@@ -1700,6 +1734,10 @@ tun_route_setup() {
             ;;
     esac
 }
+
+# =============================================================================
+# SECTION: Entry points — start / stop / restart / update / update-ip-whitelist
+# =============================================================================
 
 start() {
     msg "Starting Clash rules script"

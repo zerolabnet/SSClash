@@ -104,12 +104,25 @@ setup_clash_directories() {
 	return 0
 }
 
+# File to persist original dnsmasq settings before we change them
+DNS_BACKUP_FILE="/tmp/clash_dns_backup"
+
 # Function to configure DNS
 setup_dns() {
 	local dns_server="127.0.0.1#7874"
 
+	# Save original cachesize and noresolv values so restore_dns can put them back
+	# exactly as they were, rather than simply deleting them (which would lose any
+	# value the admin had explicitly configured before Clash was started).
+	local orig_cachesize
+	local orig_noresolv
+	orig_cachesize=$(uci get dhcp.@dnsmasq[0].cachesize 2>/dev/null)
+	orig_noresolv=$(uci get dhcp.@dnsmasq[0].noresolv 2>/dev/null)
+	printf 'CACHESIZE=%s\nNORESOLV=%s\n' "$orig_cachesize" "$orig_noresolv" > "$DNS_BACKUP_FILE"
+
 	# Check if the server is already added
-	local existing_server=$(uci get dhcp.@dnsmasq[0].server 2>/dev/null | grep "$dns_server")
+	local existing_server
+	existing_server=$(uci get dhcp.@dnsmasq[0].server 2>/dev/null | grep "$dns_server")
 
 	if [ -z "$existing_server" ]; then
 		uci add_list dhcp.@dnsmasq[0].server="$dns_server" || {
@@ -139,18 +152,37 @@ setup_dns() {
 
 # Function to restore DNS settings
 restore_dns() {
-	# Remove only our entries
 	local dns_server="127.0.0.1#7874"
 
 	# Get the list of servers and remove only ours
-	local servers=$(uci get dhcp.@dnsmasq[0].server 2>/dev/null)
+	local servers
+	servers=$(uci get dhcp.@dnsmasq[0].server 2>/dev/null)
 	if echo "$servers" | grep -q "$dns_server"; then
 		uci del_list dhcp.@dnsmasq[0].server="$dns_server" 2>/dev/null
 	fi
 
-	# Restore settings only if they were changed by us
-	uci delete dhcp.@dnsmasq[0].cachesize 2>/dev/null
-	uci delete dhcp.@dnsmasq[0].noresolv 2>/dev/null
+	# Restore the exact original values we saved before modifying them.
+	# If no backup file exists (e.g. service stopped without having been fully
+	# started), fall back to simply deleting our settings.
+	local orig_cachesize=""
+	local orig_noresolv=""
+	if [ -f "$DNS_BACKUP_FILE" ]; then
+		orig_cachesize=$(grep '^CACHESIZE=' "$DNS_BACKUP_FILE" | cut -d= -f2)
+		orig_noresolv=$(grep '^NORESOLV=' "$DNS_BACKUP_FILE" | cut -d= -f2)
+		rm -f "$DNS_BACKUP_FILE"
+	fi
+
+	if [ -n "$orig_cachesize" ]; then
+		uci set dhcp.@dnsmasq[0].cachesize="$orig_cachesize" 2>/dev/null
+	else
+		uci delete dhcp.@dnsmasq[0].cachesize 2>/dev/null
+	fi
+
+	if [ -n "$orig_noresolv" ]; then
+		uci set dhcp.@dnsmasq[0].noresolv="$orig_noresolv" 2>/dev/null
+	else
+		uci delete dhcp.@dnsmasq[0].noresolv 2>/dev/null
+	fi
 
 	if uci commit dhcp; then
 		msg "DNS settings restored"
@@ -212,17 +244,28 @@ start_service() {
 		return 1
 	fi
 
-	# Apply firewall rules
+	# Apply firewall rules — failure is fatal: without redirect rules traffic
+	# bypasses the proxy entirely, which makes the DNS-to-Clash setup incoherent.
 	apply_firewall_rules || {
-		msg "WARNING: Continuing without firewall rules"
+		msg "ERROR: Failed to apply firewall rules, aborting start"
+		return 1
 	}
 
-	# Set up DNS
-	setup_dns || return 1
+	# Set up DNS — on failure, roll back the firewall rules we just applied.
+	setup_dns || {
+		msg "ERROR: Failed to configure DNS, rolling back firewall rules"
+		remove_firewall_rules
+		return 1
+	}
 
-	# Restart dnsmasq
+	# Restart dnsmasq to apply the new DNS settings — on failure, restore DNS
+	# config and roll back firewall rules so the system is left consistent.
 	restart_dnsmasq || {
-		msg "WARNING: dnsmasq restart failed, continuing anyway"
+		msg "ERROR: Failed to restart dnsmasq, rolling back DNS and firewall rules"
+		restore_dns
+		/etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+		remove_firewall_rules
+		return 1
 	}
 
 	# Start Clash via procd
