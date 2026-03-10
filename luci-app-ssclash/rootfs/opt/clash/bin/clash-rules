@@ -844,13 +844,10 @@ apply_nft_dhcp_mangle() {
 
 # For nftables - prevent routing loops with marks in mangle chain
 apply_nft_loop_prevention_mangle() {
-    # Exclude packets already marked by Clash
+    # Exclude packets already marked by Clash (routing-mark: 2 → 0x0002)
     nft add rule inet clash CLASH_MARK meta mark 0x0002 return
+    # Exclude packets with any high-byte mark (e.g. connmark restored by other tools)
     nft add rule inet clash CLASH_MARK meta mark and 0xff00 != 0 return
-    # In MIXED mode also exclude UDP packets already marked for TUN routing (0x0003)
-    if [ "$PROXY_MODE" = "mixed" ]; then
-        nft add rule inet clash CLASH_MARK meta mark 0x0003 return
-    fi
     msg "Loop prevention rules applied in mangle"
 }
 
@@ -1097,12 +1094,10 @@ apply_iptables_dhcp_rules() {
 
 # For iptables - prevent routing loops with marks
 apply_iptables_loop_prevention() {
+    # Exclude packets already marked by Clash (routing-mark: 2 → 0x0002)
     iptables -t mangle -A CLASH_PROCESS -m mark --mark 0x0002 -j RETURN
+    # Exclude packets with any high-byte mark (e.g. connmark restored by other tools)
     iptables -t mangle -A CLASH_PROCESS -m mark --mark 0xff00/0xff00 -j RETURN
-    # In MIXED mode also exclude UDP packets already marked for TUN routing (0x0003)
-    if [ "$PROXY_MODE" = "mixed" ]; then
-        iptables -t mangle -A CLASH_PROCESS -m mark --mark 0x0003 -j RETURN
-    fi
     msg "Loop prevention rules applied"
 }
 

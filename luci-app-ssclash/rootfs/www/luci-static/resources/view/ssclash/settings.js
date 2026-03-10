@@ -196,6 +196,22 @@ function addHwidToYaml(yamlContent, userAgent, deviceOS, hwid, verOs, deviceMode
     let currentProvider = [];
     let hasHeader = false;
 
+    function flushProvider() {
+        result.push(...currentProvider);
+        if (!hasHeader) {
+            while (result.length > 0 && result[result.length - 1].trim() === '') {
+                result.pop();
+            }
+            result.push('    header:');
+            result.push(`      User-Agent: [${userAgent}]`);
+            result.push(`      x-hwid: [${hwid}]`);
+            result.push(`      x-device-os: [${deviceOS}]`);
+            result.push(`      x-ver-os: [${verOs}]`);
+            result.push(`      x-device-model: [${deviceModel}]`);
+            result.push('');
+        }
+    }
+
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
 
@@ -207,21 +223,7 @@ function addHwidToYaml(yamlContent, userAgent, deviceOS, hwid, verOs, deviceMode
 
         if (inProxyProviders) {
             if (line.match(/^[a-zA-Z]/)) {
-                if (inProvider) {
-                    result.push(...currentProvider);
-                    if (!hasHeader) {
-                        while (result.length > 0 && result[result.length - 1].trim() === '') {
-                            result.pop();
-                        }
-                        result.push('    header:');
-                        result.push(`      User-Agent: [${userAgent}]`);
-                        result.push(`      x-hwid: [${hwid}]`);
-                        result.push(`      x-device-os: [${deviceOS}]`);
-                        result.push(`      x-ver-os: [${verOs}]`);
-                        result.push(`      x-device-model: [${deviceModel}]`);
-                        result.push('');
-                    }
-                }
+                if (inProvider) flushProvider();
                 inProxyProviders = false;
                 inProvider = false;
                 result.push(line);
@@ -230,22 +232,7 @@ function addHwidToYaml(yamlContent, userAgent, deviceOS, hwid, verOs, deviceMode
 
             const providerMatch = line.match(/^  ([a-zA-Z0-9_-]+):\s*$/);
             if (providerMatch) {
-                if (inProvider) {
-                    result.push(...currentProvider);
-                    if (!hasHeader) {
-                        while (result.length > 0 && result[result.length - 1].trim() === '') {
-                            result.pop();
-                        }
-                        result.push('    header:');
-                        result.push(`      User-Agent: [${userAgent}]`);
-                        result.push(`      x-hwid: [${hwid}]`);
-                        result.push(`      x-device-os: [${deviceOS}]`);
-                        result.push(`      x-ver-os: [${verOs}]`);
-                        result.push(`      x-device-model: [${deviceModel}]`);
-                        result.push('');
-                    }
-                }
-
+                if (inProvider) flushProvider();
                 currentProvider = [line];
                 inProvider = true;
                 hasHeader = false;
@@ -266,21 +253,7 @@ function addHwidToYaml(yamlContent, userAgent, deviceOS, hwid, verOs, deviceMode
         }
     }
 
-    if (inProvider) {
-        result.push(...currentProvider);
-        if (!hasHeader) {
-            while (result.length > 0 && result[result.length - 1].trim() === '') {
-                result.pop();
-            }
-            result.push('    header:');
-            result.push(`      User-Agent: [${userAgent}]`);
-            result.push(`      x-hwid: [${hwid}]`);
-            result.push(`      x-device-os: [${deviceOS}]`);
-            result.push(`      x-ver-os: [${verOs}]`);
-            result.push(`      x-device-model: [${deviceModel}]`);
-            result.push('');
-        }
-    }
+    if (inProvider) flushProvider();
 
     return result.join('\n');
 }
@@ -440,33 +413,35 @@ async function loadSettings() {
         };
 
         content.split('\n').forEach(line => {
-            const [key, value] = line.split('=');
-            if (key && value) {
-                switch(key.trim()) {
-                    case 'INTERFACE_MODE': settings.mode = value.trim(); break;
-                    case 'PROXY_MODE': settings.proxyMode = value.trim(); break;
-                    case 'AUTO_DETECT_LAN': settings.autoDetectLan = value.trim() === 'true'; break;
-                    case 'AUTO_DETECT_WAN': settings.autoDetectWan = value.trim() === 'true'; break;
-                    case 'BLOCK_QUIC': settings.blockQuic = value.trim() === 'true'; break;
-                    case 'USE_TMPFS_RULES': settings.useTmpfsRules = value.trim() === 'true'; break;
-                    case 'DETECTED_LAN': settings.detectedLan = value.trim(); break;
-                    case 'DETECTED_WAN': settings.detectedWan = value.trim(); break;
-                    case 'INCLUDED_INTERFACES':
-                        settings.includedInterfaces = value.trim() ? value.trim().split(',').map(i => i.trim()) : [];
-                        break;
-                    case 'EXCLUDED_INTERFACES':
-                        settings.excludedInterfaces = value.trim() ? value.trim().split(',').map(i => i.trim()) : [];
-                        break;
-                    case 'ENABLE_HWID':
-                        settings.enableHwid = value.trim() === 'true';
-                        break;
-                    case 'HWID_USER_AGENT':
-                        settings.hwidUserAgent = value.trim();
-                        break;
-                    case 'HWID_DEVICE_OS':
-                        settings.hwidDeviceOS = value.trim();
-                        break;
-                }
+            const eqIdx = line.indexOf('=');
+            if (eqIdx === -1) return;
+            const key = line.slice(0, eqIdx).trim();
+            const value = line.slice(eqIdx + 1).trim();
+            if (!key) return;
+            switch(key) {
+                case 'INTERFACE_MODE': settings.mode = value; break;
+                case 'PROXY_MODE': settings.proxyMode = value; break;
+                case 'AUTO_DETECT_LAN': settings.autoDetectLan = value === 'true'; break;
+                case 'AUTO_DETECT_WAN': settings.autoDetectWan = value === 'true'; break;
+                case 'BLOCK_QUIC': settings.blockQuic = value === 'true'; break;
+                case 'USE_TMPFS_RULES': settings.useTmpfsRules = value === 'true'; break;
+                case 'DETECTED_LAN': settings.detectedLan = value; break;
+                case 'DETECTED_WAN': settings.detectedWan = value; break;
+                case 'INCLUDED_INTERFACES':
+                    settings.includedInterfaces = value ? value.split(',').map(i => i.trim()) : [];
+                    break;
+                case 'EXCLUDED_INTERFACES':
+                    settings.excludedInterfaces = value ? value.split(',').map(i => i.trim()) : [];
+                    break;
+                case 'ENABLE_HWID':
+                    settings.enableHwid = value === 'true';
+                    break;
+                case 'HWID_USER_AGENT':
+                    settings.hwidUserAgent = value;
+                    break;
+                case 'HWID_DEVICE_OS':
+                    settings.hwidDeviceOS = value;
+                    break;
             }
         });
 
@@ -1672,7 +1647,7 @@ return view.extend({
             'class': 'btn',
             'click': async function() {
                 try {
-                    await fs.exec('/etc/init.d/clash', ['reload']);
+                    await fs.exec('/etc/init.d/clash', ['restart']);
                     ui.addNotification(null, E('p', _('Clash service restarted successfully.')), 'info');
                     const currentMode = modeSelector.querySelector('input[name="interface_mode"]:checked').value;
                     const currentAutoDetectLan = autoDetectOptions.querySelector('#auto_detect_lan').checked;
