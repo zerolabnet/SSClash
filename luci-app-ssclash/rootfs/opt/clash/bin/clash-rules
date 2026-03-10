@@ -1796,7 +1796,6 @@ start() {
 stop() {
     msg "Stopping Clash rules script"
 
-    # Load settings to know if QUIC rules need to be removed
     load_all_settings_once
 
     if hash nft 2>/dev/null; then
@@ -1806,10 +1805,11 @@ stop() {
         msg "nftables rules removed successfully"
     elif hash iptables 2>/dev/null; then
         teardown_iptables_tun_forward_rules
-        if [ "$BLOCK_QUIC" = "true" ]; then
-            iptables -t filter -D INPUT -p udp --dport 443 -j REJECT 2>/dev/null
-            iptables -t filter -D FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
-        fi
+        # Always attempt to remove QUIC rules unconditionally: if the setting was
+        # changed from "true" to "false" before restart, a conditional removal based
+        # on the current value would leave stale rules in the filter table.
+        iptables -t filter -D INPUT -p udp --dport 443 -j REJECT 2>/dev/null
+        iptables -t filter -D FORWARD -p udp --dport 443 -j REJECT 2>/dev/null
         iptables -t mangle -D PREROUTING -j CLASH 2>/dev/null
         iptables -t mangle -F CLASH 2>/dev/null
         iptables -t mangle -X CLASH 2>/dev/null
