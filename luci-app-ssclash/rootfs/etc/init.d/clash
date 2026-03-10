@@ -11,6 +11,7 @@ RULESET_TMPFS="/tmp/clash/ruleset"
 RULESET_LINK="${CLASH_DIR}/ruleset"
 PROXY_PROVIDERS_TMPFS="/tmp/clash/proxy_providers"
 PROXY_PROVIDERS_LINK="${CLASH_DIR}/proxy_providers"
+DNS_BACKUP_FILE="/tmp/clash/clash_dns_backup"
 SETTINGS_FILE="${CLASH_DIR}/settings"
 USE_TMPFS_RULES="true"
 
@@ -103,9 +104,6 @@ setup_clash_directories() {
 
 	return 0
 }
-
-# File to persist original dnsmasq settings before we change them
-DNS_BACKUP_FILE="/tmp/clash_dns_backup"
 
 # Function to configure DNS
 setup_dns() {
