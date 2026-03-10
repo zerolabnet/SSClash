@@ -180,6 +180,19 @@ return view.extend({
                 await fs.write('/opt/clash/config.yaml', value);
                 ui.addNotification(null, E('p', _('Configuration saved successfully.')), 'info');
 
+                // Validate the config before reloading the service.
+                // Running `clash -d /opt/clash -t` performs a dry-run syntax check
+                // against the file we just saved without starting the daemon.
+                const testResult = await fs.exec('/opt/clash/bin/clash', ['-d', '/opt/clash', '-t']);
+                if (testResult.code !== 0) {
+                    const errDetail = (testResult.stderr || testResult.stdout || '').trim();
+                    ui.addNotification(null, E('p',
+                        _('Configuration test failed — service not reloaded. Please fix the errors below:\n%s')
+                            .format(errDetail || _('unknown error'))
+                    ), 'error');
+                    return;
+                }
+
                 await fs.exec('/etc/init.d/clash', ['reload']);
                 ui.addNotification(null, E('p', _('Service reloaded successfully.')), 'info');
 
