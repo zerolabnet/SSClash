@@ -103,6 +103,16 @@ define Package/$(PKG_NAME)/postinst
 [ -n "$$IPKG_INSTROOT" ] || {
 	/etc/init.d/rpcd reload
 	rm -f /tmp/luci-*
+
+	# Ensure periodic clash-rules update cron job exists
+	CRON_FILE="/etc/crontabs/root"
+	CRON_LINE="*/30 * * * * /opt/clash/bin/clash-rules update >/dev/null 2>&1"
+
+	[ -f "$$CRON_FILE" ] || touch "$$CRON_FILE"
+	if ! grep -Fq "/opt/clash/bin/clash-rules update" "$$CRON_FILE" 2>/dev/null; then
+		echo "$$CRON_LINE" >> "$$CRON_FILE"
+		/etc/init.d/cron restart >/dev/null 2>&1 || true
+	fi
 }
 exit 0
 endef
@@ -110,6 +120,13 @@ endef
 define Package/$(PKG_NAME)/postrm
 #!/bin/sh
 [ -n "$$IPKG_INSTROOT" ] || {
+	# Clean up cron job for clash-rules update, if present
+	CRON_FILE="/etc/crontabs/root"
+	if [ -f "$$CRON_FILE" ]; then
+		sed -i '\|/opt/clash/bin/clash-rules update|d' "$$CRON_FILE" 2>/dev/null || true
+		/etc/init.d/cron restart >/dev/null 2>&1 || true
+	fi
+
 	rm -rf /opt/clash/ui
 	rm -f /opt/clash/ruleset
 	rm -rf /tmp/clash

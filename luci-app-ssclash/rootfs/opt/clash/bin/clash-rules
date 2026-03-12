@@ -422,8 +422,9 @@ cache_subscription_ips() {
         sleep 1
     done
 
-    # Create cache
-    local cached_ips=$(extract_subscription_ips)
+    # Create cache (store unique, sorted IPs for consistency and nicer logging)
+    local cached_ips
+    cached_ips=$(extract_subscription_ips | sort -u)
     if [ -n "$cached_ips" ]; then
         echo "$cached_ips" > "$SUBSCRIPTION_CACHE_FILE.tmp"
         mv "$SUBSCRIPTION_CACHE_FILE.tmp" "$SUBSCRIPTION_CACHE_FILE"
@@ -1450,10 +1451,14 @@ update_rules() {
         msg "Updating nftables proxy_servers set..."
         nft flush set inet clash proxy_servers
         if [ -n "$new_ips" ]; then
+            # Ensure unique IPs before adding to nft set for accurate logging
+            local unique_ips
+            unique_ips=$(echo "$new_ips" | sort -u)
             # Format IPs for nft: { ip1, ip2, ip3 }
-            local nft_elements=$(echo "$new_ips" | tr '\n' ',' | sed 's/,$//')
+            local nft_elements
+            nft_elements=$(echo "$unique_ips" | tr '\n' ',' | sed 's/,$//')
             nft add element inet clash proxy_servers "{ $nft_elements }"
-            msg "Updated proxy_servers set with $(echo "$new_ips" | wc -l | xargs) IPs."
+            msg "Updated proxy_servers set with $(echo "$unique_ips" | wc -l | xargs) unique IPs."
         else
             msg "No subscription IPs to add to the set."
         fi

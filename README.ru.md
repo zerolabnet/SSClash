@@ -181,15 +181,3 @@ rm -rf /opt/clash
 ```bash
 opkg remove kmod-nft-tproxy iptables-mod-tproxy kmod-tun
 ```
-
-
-# Дополнительная информация (необязательно):
-
-## 1. Если вы используете `proxy-providers`, то для автоматического обновления IP-адресов прокси-серверов (исключаемых из цепочки mangle) при изменении подписок:
-
-Создайте задачу в cron:
-
-```sh
-# Проверка и обновление каждые 30 минут
-*/30 * * * * /opt/clash/bin/clash-rules update >/dev/null 2>&1
-```

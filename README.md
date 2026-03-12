@@ -180,16 +180,3 @@ If you are sure that transparent proxying and TUN mode are no longer needed by a
 ```bash
 opkg remove kmod-nft-tproxy iptables-mod-tproxy kmod-tun
 ```
-
----
-
-# Extra Info (optional):
-
-## 1. If you use `proxy-providers`, to automatically update the proxy server IP addresses (which are excluded from the mangle chain) when subscriptions change:
-
-Create a cron job:
-
-```sh
-# Check and update every 30 minutes
-*/30 * * * * /opt/clash/bin/clash-rules update >/dev/null 2>&1
-```
