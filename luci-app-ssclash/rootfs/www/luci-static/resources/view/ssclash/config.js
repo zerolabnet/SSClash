@@ -187,7 +187,7 @@ return view.extend({
                 if (testResult.code !== 0) {
                     const errDetail = (testResult.stderr || testResult.stdout || '').trim();
                     ui.addNotification(null, E('p',
-                        _('Configuration test failed — service not reloaded. Please fix the errors below:\n%s')
+                        _('Configuration test failed — service not reloaded. Please fix the errors below: %s')
                             .format(errDetail || _('unknown error'))
                     ), 'error');
                     return;

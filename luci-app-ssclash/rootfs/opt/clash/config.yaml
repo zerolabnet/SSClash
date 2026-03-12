@@ -8,6 +8,9 @@ tcp-concurrent: true
 external-controller: 0.0.0.0:9090
 external-ui: ./ui
 
+# Disable automatic geodata (GeoIP/ASN) downloads by default
+geo-auto-update: false
+
 # DNS server settings
 # This section is optional. When not present, the DNS server will be disabled.
 dns:
