@@ -126,8 +126,11 @@ msgstr "Локальные списки правил"
 msgid "Create New List"
 msgstr "Создать новый список"
 
-msgid "Here you can manage local lists for use in rule-providers. Example usage in your config.yaml: type: file, format: text, path: ./lst/your-list.txt"
-msgstr "Здесь вы можете управлять локальными списками для использования в rule-providers. Пример использования в вашем config.yaml: type: file, format: text, path: ./lst/your-list.txt"
+msgid "Here you can manage local lists for use in rule-providers."
+msgstr "Здесь вы можете управлять локальными списками для использования в rule-providers."
+
+msgid "Example usage in your config.yaml:"
+msgstr "Пример использования в вашем config.yaml:"
 
 msgid "Editor not initialized."
 msgstr "Редактор не инициализирован."

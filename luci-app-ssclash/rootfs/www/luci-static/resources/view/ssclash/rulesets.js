@@ -313,7 +313,17 @@ return view.extend({
                     }, _('Create New List'))
                 ]),
                 E('p', { class: 'cbi-section-descr' }, [
-                    _('Here you can manage local lists for use in rule-providers. Example usage in your config.yaml: type: file, format: text, path: ./lst/your-list.txt')
+                    _('Here you can manage local lists for use in rule-providers.')
+                ]),
+                E('div', {
+                    'class': 'cbi-section-descr',
+                    'style': 'margin-top: 8px;'
+                }, [
+                    E('div', { 'style': 'margin-bottom: 4px; font-weight: bold;' },
+                        _('Example usage in your config.yaml:')),
+                    E('pre', {
+                        'style': 'margin: 0; font-family: monospace; background: #f7f7f7; padding: 8px 10px; border-radius: 4px; border: 1px solid #e0e0e0; white-space: pre;'
+                    }, 'rule-providers:\n  your-list-name:\n    type: file\n    format: text\n    path: ./lst/your-list.txt')
                 ])
             ]),
             ...whitelistSections,
