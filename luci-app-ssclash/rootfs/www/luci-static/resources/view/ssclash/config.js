@@ -180,15 +180,33 @@ return view.extend({
                 await fs.write('/opt/clash/config.yaml', value);
                 ui.addNotification(null, E('p', _('Configuration saved successfully.')), 'info');
 
-                // Validate the config before reloading the service.
-                // Running `clash -d /opt/clash -t` performs a dry-run syntax check
-                // against the file we just saved without starting the daemon.
                 const testResult = await fs.exec('/opt/clash/bin/clash', ['-d', '/opt/clash', '-t']);
                 if (testResult.code !== 0) {
-                    const errDetail = (testResult.stderr || testResult.stdout || '').trim();
+                    const rawDetail = (testResult.stderr || testResult.stdout || '').trim();
+                    let shortDetail = rawDetail;
+
+                    if (rawDetail) {
+                        const lines = rawDetail.split('\n');
+                        let found = false;
+                        for (const line of lines) {
+                            const msgMatch = line.match(/msg="([^"]+)"/);
+                            if (msgMatch) {
+                                shortDetail = msgMatch[1].trim();
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            const nonEmpty = lines.filter(l => l.trim().length > 0);
+                            if (nonEmpty.length > 0) {
+                                shortDetail = nonEmpty[nonEmpty.length - 1].trim();
+                            }
+                        }
+                    }
+
                     ui.addNotification(null, E('p',
                         _('Configuration test failed — service not reloaded. Please fix the errors below: %s')
-                            .format(errDetail || _('unknown error'))
+                        .format(shortDetail || _('unknown error'))
                     ), 'error');
                     return;
                 }
