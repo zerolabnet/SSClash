@@ -175,9 +175,3 @@ SSClash предлагает два режима обработки интерф
 opkg remove luci-app-ssclash
 rm -rf /opt/clash
 ```
-
-Если вы уверены, что прозрачное проксирование и режим TUN больше не используются другими сервисами, вы также можете удалить соответствующие модули ядра:
-
-```bash
-opkg remove kmod-nft-tproxy iptables-mod-tproxy kmod-tun
-```

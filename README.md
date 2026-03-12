@@ -174,9 +174,3 @@ To remove Clash completely:
 opkg remove luci-app-ssclash
 rm -rf /opt/clash
 ```
-
-If you are sure that transparent proxying and TUN mode are no longer needed by any other services, you can also remove the kernel modules:
-
-```bash
-opkg remove kmod-nft-tproxy iptables-mod-tproxy kmod-tun
-```
