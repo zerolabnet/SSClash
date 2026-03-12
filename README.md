@@ -42,8 +42,8 @@ opkg install iptables-mod-tproxy
 Download the SSClash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.6.0/luci-app-ssclash_3.6.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.6.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_3.6.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.7.0/luci-app-ssclash_3.7.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.7.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_3.7.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -185,62 +185,7 @@ opkg remove kmod-nft-tproxy iptables-mod-tproxy kmod-tun
 
 # Extra Info (optional):
 
-## 1. To automatically update Clash rules when the Internet interface comes up:
-
-Create the Hotplug Script:
-
-1. Create the script in `/etc/hotplug.d/iface/40-clash_rules`:
-```bash
-vi /etc/hotplug.d/iface/40-clash_rules
-```
-
-2. Add the following content:
-```sh
-#!/bin/sh
-
-# Add delay
-sleep 10
-
-# API IP address and port
-api_base_url="http://192.168.1.1:9090"
-
-# API URL
-base_url="$api_base_url/providers/rules"
-
-# Get JSON response with provider names
-response=$(curl -s "$base_url")
-
-# Extract provider names using standard utilities
-providers=$(echo "$response" | grep -o '"name":"[^"]*"' | sed 's/"name":"\([^"]*\)"/\1/')
-
-# Check if data retrieval was successful
-if [ -z "$providers" ]; then
-  echo "Failed to retrieve providers or no providers found."
-  exit 1
-fi
-
-# Loop through each provider name and send PUT request to update
-for provider in $providers; do
-  echo "Updating provider: $provider"
-  curl -X PUT "$base_url/$provider"
-
-  # Check success and output the result
-  if [ $? -eq 0 ]; then
-    echo "Successfully updated $provider"
-  else
-    echo "Failed to update $provider"
-  fi
-done
-
-# Service restart
-/etc/init.d/clash reload
-```
-
-3. Save and exit the editor.
-
-This script automatically updates rule providers whenever the Internet interface comes up, ensuring rules are refreshed after router reboots.
-
-## 2. If you use `proxy-providers`, to automatically update the proxy server IP addresses (which are excluded from the mangle chain) when subscriptions change:
+## 1. If you use `proxy-providers`, to automatically update the proxy server IP addresses (which are excluded from the mangle chain) when subscriptions change:
 
 Create a cron job:
 

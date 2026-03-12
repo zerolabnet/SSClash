@@ -40,8 +40,8 @@ opkg install iptables-mod-tproxy
 Загрузите пакет SSClash и установите его.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.6.0/luci-app-ssclash_3.6.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.6.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_3.6.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.7.0/luci-app-ssclash_3.7.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.7.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_3.7.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -185,62 +185,7 @@ opkg remove kmod-nft-tproxy iptables-mod-tproxy kmod-tun
 
 # Дополнительная информация (необязательно):
 
-## 1. Чтобы автоматически обновлять правила Clash при включении интернет-интерфейса:
-
-Создайте скрипт Hotplug:
-
-1. Создайте скрипт в `/etc/hotplug.d/iface/40-clash_rules`:
-```bash
-vi /etc/hotplug.d/iface/40-clash_rules
-```
-
-2. Добавьте следующее содержимое:
-```sh
-#!/bin/sh
-
-# Добавить задержку
-sleep 10
-
-# IP-адрес и порт API
-api_base_url="http://192.168.1.1:9090"
-
-# URL API
-base_url="$api_base_url/providers/rules"
-
-# Получить JSON-ответ с именами провайдеров
-response=$(curl -s "$base_url")
-
-# Извлечь имена провайдеров с помощью стандартных утилит
-providers=$(echo "$response" | grep -o '"name":"[^"]*"' | sed 's/"name":"\([^"]*\)"/\1/')
-
-# Проверить, успешно ли были получены данные
-if [ -z "$providers" ]; then
-  echo "Не удалось получить данные или провайдеры не найдены."
-  exit 1
-fi
-
-# Пройтись по каждому имени провайдера и отправить PUT-запрос для обновления
-for provider in $providers; do
-  echo "Обновление провайдера: $provider"
-  curl -X PUT "$base_url/$provider"
-
-  # Проверить успешность и вывести результат
-  if [ $? -eq 0 ]; then
-    echo "Успешно обновлен $provider"
-  else
-    echo "Не удалось обновить $provider"
-  fi
-done
-
-# Перезапуск службы
-/etc/init.d/clash reload
-```
-
-3. Сохраните и выйдите из редактора.
-
-Этот скрипт автоматически обновляет провайдеров правил всякий раз, когда включается интернет-интерфейс, обеспечивая обновление правил после перезагрузки роутера.
-
-## 2. Если вы используете `proxy-providers`, то для автоматического обновления IP-адресов прокси-серверов (исключаемых из цепочки mangle) при изменении подписок:
+## 1. Если вы используете `proxy-providers`, то для автоматического обновления IP-адресов прокси-серверов (исключаемых из цепочки mangle) при изменении подписок:
 
 Создайте задачу в cron:
 

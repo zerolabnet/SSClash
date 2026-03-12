@@ -154,6 +154,19 @@ resolve_domain() {
     local domain="$1"
     local resolved_ips=""
 
+    # During early boot DNS may be unavailable and blocking lookups can freeze
+    # the init sequence (uhttpd / LuCI). If system uptime is still low, skip
+    # resolving domains and let only plain IPs be used; subscriptions can be
+    # fully refreshed later via the cron/hotplug update hook.
+    if [ -r /proc/uptime ]; then
+        local up_seconds
+        up_seconds=$(cut -d'.' -f1 /proc/uptime 2>/dev/null)
+        if [ -n "$up_seconds" ] && [ "$up_seconds" -lt 300 ]; then
+            msg "Skipping DNS resolve for '$domain' (uptime ${up_seconds}s, DNS may be unavailable)"
+            return 0
+        fi
+    fi
+
     # Use nslookup to resolve the domain
     if command -v nslookup >/dev/null 2>&1; then
         resolved_ips=$(nslookup "$domain" 2>/dev/null | awk '/^Address: / { print $2 }' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
@@ -171,8 +184,8 @@ resolve_domain() {
     fi
 }
 
-# Function to decode base64 using available utilities or pure shell fallback
-# Tries multiple methods: standard base64, busybox, openssl, pure shell
+# Function to decode base64 using available utilities
+# Tries multiple methods: standard base64, busybox, openssl
 decode_base64() {
     local encoded="$1"
 
@@ -201,89 +214,8 @@ decode_base64() {
     if command -v openssl >/dev/null 2>&1; then
         echo "$encoded" | openssl base64 -d -A 2>/dev/null && return 0
     fi
-
-    # Pure shell fallback (slow but reliable)
-    msg "Using pure shell base64 decoder (this may be slow)"
-
-    # Helper function to convert base64 character to number
-    char_to_base64_num() {
-        local char="$1"
-        case "$char" in
-            A) echo 0 ;;  B) echo 1 ;;  C) echo 2 ;;  D) echo 3 ;;  E) echo 4 ;;  F) echo 5 ;;
-            G) echo 6 ;;  H) echo 7 ;;  I) echo 8 ;;  J) echo 9 ;;  K) echo 10 ;; L) echo 11 ;;
-            M) echo 12 ;; N) echo 13 ;; O) echo 14 ;; P) echo 15 ;; Q) echo 16 ;; R) echo 17 ;;
-            S) echo 18 ;; T) echo 19 ;; U) echo 20 ;; V) echo 21 ;; W) echo 22 ;; X) echo 23 ;;
-            Y) echo 24 ;; Z) echo 25 ;;
-            a) echo 26 ;; b) echo 27 ;; c) echo 28 ;; d) echo 29 ;; e) echo 30 ;; f) echo 31 ;;
-            g) echo 32 ;; h) echo 33 ;; i) echo 34 ;; j) echo 35 ;; k) echo 36 ;; l) echo 37 ;;
-            m) echo 38 ;; n) echo 39 ;; o) echo 40 ;; p) echo 41 ;; q) echo 42 ;; r) echo 43 ;;
-            s) echo 44 ;; t) echo 45 ;; u) echo 46 ;; v) echo 47 ;; w) echo 48 ;; x) echo 49 ;;
-            y) echo 50 ;; z) echo 51 ;;
-            0) echo 52 ;; 1) echo 53 ;; 2) echo 54 ;; 3) echo 55 ;; 4) echo 56 ;; 5) echo 57 ;;
-            6) echo 58 ;; 7) echo 59 ;; 8) echo 60 ;; 9) echo 61 ;;
-            +) echo 62 ;; /) echo 63 ;;
-            *) echo -1 ;;
-        esac
-    }
-
-    # Helper function to decode 4 base64 numbers into bytes
-    decode_base64_chunk() {
-        local n1=${1:-0} n2=${2:-0} n3=${3:-0} n4=${4:-0}
-
-        # First byte: first 6 bits from n1 + first 2 bits from n2
-        local byte1=$(( (n1 << 2) | (n2 >> 4) ))
-        printf "\\$(printf '%03o' $byte1)"
-
-        # Second byte if n3 exists
-        if [ "$3" ]; then
-            local byte2=$(( ((n2 & 15) << 4) | (n3 >> 2) ))
-            printf "\\$(printf '%03o' $byte2)"
-
-            # Third byte if n4 exists
-            if [ "$4" ]; then
-                local byte3=$(( ((n3 & 3) << 6) | n4 ))
-                printf "\\$(printf '%03o' $byte3)"
-            fi
-        fi
-    }
-
-    # Process encoded string in 4-character chunks
-    local i=0
-    local len=${#encoded}
-
-    while [ $i -lt $len ]; do
-        # Extract next 4 characters
-        local c1 c2 c3 c4
-        c1=$(echo "$encoded" | cut -c$((i+1)))
-        c2=$(echo "$encoded" | cut -c$((i+2)))
-        c3=$(echo "$encoded" | cut -c$((i+3)))
-        c4=$(echo "$encoded" | cut -c$((i+4)))
-
-        # Convert to numbers
-        local n1 n2 n3 n4
-        n1=$(char_to_base64_num "$c1")
-        n2=$(char_to_base64_num "$c2")
-        n3=$(char_to_base64_num "$c3")
-        n4=$(char_to_base64_num "$c4")
-
-        # Check for errors or padding
-        if [ "$n1" -eq -1 ] || [ "$n2" -eq -1 ]; then
-            break
-        fi
-
-        # Decode chunk
-        if [ "$n3" -eq -1 ]; then
-            decode_base64_chunk $n1 $n2
-            break
-        elif [ "$n4" -eq -1 ]; then
-            decode_base64_chunk $n1 $n2 $n3
-            break
-        else
-            decode_base64_chunk $n1 $n2 $n3 $n4
-        fi
-
-        i=$((i + 4))
-    done
+    msg "ERROR: No suitable base64 decoder (base64 / busybox / openssl) found"
+    return 1
 }
 
 # =============================================================================
