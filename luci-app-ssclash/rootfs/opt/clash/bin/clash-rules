@@ -43,6 +43,11 @@ msg() {
     logger -p daemon.info -st "clash-rules[$$]" "$*"
 }
 
+# Function to log warnings
+warn() {
+    logger -p daemon.warn -st "clash-rules[$$]" "$*"
+}
+
 # Function to load all settings from the settings file into global variables.
 # This is called only once to improve performance.
 load_all_settings_once() {
@@ -1521,19 +1526,15 @@ setup_routing_rules() {
     case "$PROXY_MODE" in
         "tun")
             ip rule add fwmark 0x0001 table 100 2>/dev/null
-            # Best-effort for restart (clash-tun already up); on fresh start the daemon below sets it.
-            ip route replace default dev clash-tun table 100 2>/dev/null
             msg "Routing: fwmark 0x0001 → table 100 → clash-tun (TUN mode)"
-            _spawn_tun_route_daemon 100
+            _wait_and_set_tun_route 100
             ;;
         "mixed")
             ip route add local default dev lo table 100 2>/dev/null
             ip rule add fwmark 0x0001 table 100 2>/dev/null
             ip rule add fwmark 0x0003 table 101 2>/dev/null
-            # Best-effort for restart (clash-tun already up); on fresh start the daemon below sets it.
-            ip route replace default dev clash-tun table 101 2>/dev/null
             msg "Routing: TCP fwmark 0x0001 → table 100 → lo (TPROXY), UDP fwmark 0x0003 → table 101 → clash-tun (MIXED mode)"
-            _spawn_tun_route_daemon 101
+            _wait_and_set_tun_route 101
             ;;
         *)
             ip route add local default dev lo table 100 2>/dev/null
@@ -1543,40 +1544,42 @@ setup_routing_rules() {
     esac
 }
 
-# Double-fork a lightweight daemon that waits for clash-tun and adds the default
-# route in the given policy-routing table.  The double-fork detaches the inner
-# process from both clash-rules and the calling init.d shell: when the outer
-# subshell exits its child is reparented to PID 1 (init) and cannot be killed
-# by anything in the init.d lifecycle.
-_spawn_tun_route_daemon() {
+# Wait for clash-tun to appear and set the policy route in the given table.
+#
+# This is a one-shot background job: it runs once per mihomo (re)start,
+# waits up to 30 s for clash-tun, sets the route, and exits.
+#
+# Called from:
+#   setup_routing_rules()  — on initial clash-rules start
+#   tun_route_watch        — on every procd respawn (via service_started)
+#
+# procd already handles respawn; we only need to restore the route after
+# each respawn because the kernel removes it when clash-tun disappears.
+_wait_and_set_tun_route() {
     local table="$1"
-    # Fast path: interface already exists (e.g. service restart with mihomo still running)
-    if [ -d "/sys/class/net/clash-tun" ]; then
-        ip route replace default dev clash-tun table "$table" 2>/dev/null && \
-            msg "TUN route set immediately: clash-tun → table $table" && return 0
-    fi
-    # Slow path: mihomo hasn't created clash-tun yet — daemonise a watcher.
-    # Outer subshell exits right after forking the inner one, so the inner
-    # process is adopted by init and outlives init.d / clash-rules.
+
+    # Run entirely in the background so we never block the caller.
     (
-        (
-            exec < /dev/null > /dev/null 2>&1
-            t=0
-            while [ "$t" -lt 30 ]; do
-                if [ -d "/sys/class/net/clash-tun" ]; then
-                    ip route replace default dev clash-tun table "$table"
-                    logger -p daemon.info -t ssclash \
-                        "TUN route daemon: clash-tun → table $table (after ${t}s)"
+        exec < /dev/null > /dev/null 2>&1
+        local t=0
+        while [ "$t" -lt 30 ]; do
+            if [ -d "/sys/class/net/clash-tun" ]; then
+                # Wait for operstate to leave "down"
+                local state
+                state=$(cat "/sys/class/net/clash-tun/operstate" 2>/dev/null)
+                if [ "$state" != "down" ] && [ -n "$state" ]; then
+                    ip route replace default dev clash-tun table "$table" 2>/dev/null && \
+                        msg "TUN route set: clash-tun → table $table (operstate=$state)"
                     exit 0
                 fi
-                sleep 1
-                t=$((t + 1))
-            done
-            logger -p daemon.warn -t ssclash \
-                "TUN route daemon: clash-tun not found after 30s (table $table)"
-        ) &
+            fi
+            sleep 1
+            t=$((t + 1))
+        done
+        warn "TUN route: clash-tun not ready after 30s (table $table)"
     ) &
 }
+
 
 # Remove all possible routing entries created by setup_routing_rules.
 # Cleans up all modes unconditionally (safe: errors suppressed)
@@ -1722,7 +1725,7 @@ start() {
             msg "Proxy mode: TUN (all traffic routed via clash-tun, no TPROXY)"
             ;;
         "mixed")
-            msg "Proxy mode: MIXED (TCP via TPROXY port 7894, UDP via clash-tun/gVisor)"
+            msg "Proxy mode: MIXED (TCP via TPROXY port 7894, UDP via clash-tun)"
             ;;
         *)
             msg "Proxy mode: TPROXY (TCP+UDP via TPROXY port 7894)"
@@ -1824,13 +1827,13 @@ case "$1" in
         tun_route_setup
         ;;
     tun_route_watch)
-        # Spawn a TUN route watcher daemon for the current proxy mode.
-        # Called on every procd (re)start so that the policy-routing table entry
-        # is restored even when Mihomo is respawned without a full clash-rules restart.
+        # Called by service_started() on every procd respawn.
+        # Spawns a one-shot background job that waits for clash-tun and
+        # restores the policy-routing table entry.
         load_all_settings_once
         case "$PROXY_MODE" in
-            "tun")   _spawn_tun_route_daemon 100 ;;
-            "mixed") _spawn_tun_route_daemon 101 ;;
+            "tun")   _wait_and_set_tun_route 100 ;;
+            "mixed") _wait_and_set_tun_route 101 ;;
             *) msg "tun_route_watch: nothing to do for proxy mode '$PROXY_MODE'" ;;
         esac
         ;;

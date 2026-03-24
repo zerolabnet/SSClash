@@ -94,7 +94,7 @@ function startPolling() {
 }
 
 function processLogLine(line) {
-    const match = line.match(/^.*? ([\d:]{8}) .*?daemon\.(\w+)\s+(clash(?:-rules)?)\b\[\d+\]:\s*(.*)$/);
+    const match = line.match(/^.*? ([\d:]{8}) .*?daemon\.(\w+)\s+(clash(?:-rules|-hotplug)?)\b(?:\[\d+\])?:\s*(.*)$/);
 
     if (!match) {
         return null;
@@ -118,6 +118,8 @@ function processLogLine(line) {
         marker = '🔵';
     } else if (daemon === 'clash-rules') {
         marker = '🟢';
+    } else if (daemon === 'clash-hotplug') {
+        marker = '🟠';
     }
 
     return `[${time}] ${marker} [${daemon}] [${level.toUpperCase()}] ${message}`;

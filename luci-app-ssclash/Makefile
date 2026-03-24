@@ -71,6 +71,9 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./rootfs/etc/init.d/clash $(1)/etc/init.d/
 
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
+	$(INSTALL_BIN) ./rootfs/etc/hotplug.d/iface/40-clash $(1)/etc/hotplug.d/iface/
+
 	$(INSTALL_DIR) $(1)/opt/clash/bin
 	$(INSTALL_BIN) ./rootfs/opt/clash/bin/clash-rules $(1)/opt/clash/bin/
 
@@ -132,6 +135,7 @@ define Package/$(PKG_NAME)/postrm
 	rm -rf /tmp/clash
 	rm -rf /www/luci-static/resources/view/ssclash
 	rm -f /usr/lib/lua/luci/i18n/ssclash.*.lmo
+	rm -f /etc/hotplug.d/iface/40-clash
 }
 endef
 

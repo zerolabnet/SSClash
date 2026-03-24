@@ -1,0 +1,247 @@
+#!/bin/sh
+#
+# /etc/hotplug.d/iface/40-clash
+#
+# Updates Clash proxy-providers (HTTP subscriptions only) and rule-providers
+# via the mihomo REST API when a WAN interface comes up.
+#
+# Triggered on every ifup hotplug event, but only acts when a real default
+# route exists — the reliable indicator that internet is available.
+#
+# Test manually:
+#   ACTION=ifup INTERFACE=wan DEVICE=ppp0 sh /etc/hotplug.d/iface/40-clash
+#   logread | grep clash-hotplug
+
+# Only act on interface up events
+[ "$ACTION" = "ifup" ] || exit 0
+
+# Check that Clash is running
+pgrep -f '/opt/clash/bin/clash -d' > /dev/null 2>&1 || exit 0
+
+# Check for a default route — the reliable sign that internet is available.
+# We intentionally do not filter by interface name: INTERFACE is a UCI logical
+# name (wan) and DEVICE is physical (ppp0, eth1), and either can vary across
+# setups. A working default route means connectivity is confirmed.
+ip route show default | grep -q 'default via' || exit 0
+
+# ---------------------------------------------------------------------------
+# Logging helpers
+# ---------------------------------------------------------------------------
+msg()  { logger -p daemon.info -t clash-hotplug "$*"; }
+warn() { logger -p daemon.warn -t clash-hotplug "$*"; }
+
+msg "WAN up (iface=$INTERFACE dev=$DEVICE), scheduling provider update"
+
+# Wait for the connection to stabilise and DNS to become available.
+# PPPoE and similar links may take a few seconds after route appearance.
+sleep 10
+
+# ---------------------------------------------------------------------------
+# Configuration — read from clash config file, no hardcoded values
+# ---------------------------------------------------------------------------
+
+CLASH_CONFIG="/opt/clash/config.yaml"
+
+# Extract API port from external-controller (e.g. "0.0.0.0:9090" → "9090")
+api_port=$(grep -m1 '^\s*external-controller:' "$CLASH_CONFIG" 2>/dev/null \
+    | sed 's/.*:\([0-9][0-9]*\)\s*$/\1/')
+[ -n "$api_port" ] || api_port="9090"
+
+# Always connect via loopback — mihomo listens on 0.0.0.0 so this works
+# regardless of the router's LAN IP address.
+API="http://127.0.0.1:${api_port}"
+
+# Extract secret if configured; build the Authorization header value
+secret=$(grep -m1 '^\s*secret:' "$CLASH_CONFIG" 2>/dev/null \
+    | sed 's/^\s*secret:\s*//' | tr -d '"'"'" | tr -d '[:space:]')
+
+# ---------------------------------------------------------------------------
+# urlencode <string>
+#
+# Percent-encodes every byte that is not an unreserved URI character so that
+# provider names containing spaces, Cyrillic, emoji, etc. work correctly in
+# the API path segment. Uses hexdump which is available on all OpenWrt images.
+# ---------------------------------------------------------------------------
+urlencode() {
+    printf '%s' "$1" | hexdump -v -e '/1 "%02x\n"' | while IFS= read -r byte; do
+        case "$byte" in
+            # RFC 3986 unreserved characters: A-Z a-z 0-9 - _ . ~
+            41|42|43|44|45|46|47|48|49|4a|4b|4c|4d|4e|4f|50|51|52|53|54|\
+            55|56|57|58|59|5a|\
+            61|62|63|64|65|66|67|68|69|6a|6b|6c|6d|6e|6f|70|71|72|73|74|\
+            75|76|77|78|79|7a|\
+            30|31|32|33|34|35|36|37|38|39|\
+            2d|5f|2e|7e)
+                printf "\\x${byte}"
+                ;;
+            *)
+                printf '%%%s' "$(echo "$byte" | tr 'a-f' 'A-F')"
+                ;;
+        esac
+    done
+}
+
+# ---------------------------------------------------------------------------
+# api_put <path>
+#
+# Sends a PUT request to the mihomo API. Includes the Authorization header
+# only when a secret is configured. Returns curl's exit code.
+# ---------------------------------------------------------------------------
+api_put() {
+    local path="$1"
+    if [ -n "$secret" ]; then
+        curl -sf -X PUT \
+            -H "Authorization: Bearer ${secret}" \
+            "${API}${path}" > /dev/null 2>&1
+    else
+        curl -sf -X PUT \
+            "${API}${path}" > /dev/null 2>&1
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# api_get <path>
+#
+# Sends a GET request and prints the response body.
+# ---------------------------------------------------------------------------
+api_get() {
+    local path="$1"
+    if [ -n "$secret" ]; then
+        curl -sf \
+            -H "Authorization: Bearer ${secret}" \
+            "${API}${path}" 2>/dev/null
+    else
+        curl -sf \
+            "${API}${path}" 2>/dev/null
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# update_proxy_providers
+#
+# Updates only HTTP-type proxy providers (subscriptions downloaded from a URL).
+# Static providers — DIRECT, REJECT, inline proxy groups — have vehicleType
+# "Compatible" and are skipped: they have no remote URL to fetch from.
+#
+# API reference:
+#   GET  /providers/proxies          — list all proxy providers with metadata
+#   PUT  /providers/proxies/{name}   — trigger re-download for one provider
+#
+# The GET response is a JSON object whose values contain "vehicleType" fields:
+#   "vehicleType":"HTTP"       — subscription (remote URL), should be updated
+#   "vehicleType":"File"       — local file provider, may be updated if needed
+#   "vehicleType":"Compatible" — built-in / inline, skip
+#
+# Provider names may contain spaces, Unicode, and emoji, so we use IFS= read
+# to avoid word-splitting and urlencode() to build safe URL path segments.
+# ---------------------------------------------------------------------------
+update_proxy_providers() {
+    local response
+    response=$(api_get "/providers/proxies")
+    if [ -z "$response" ]; then
+        warn "Failed to reach API at ${API} (Clash not ready yet?)"
+        return 1
+    fi
+
+    # Extract names of HTTP providers only.
+    # Actual JSON structure (fields are NOT adjacent — "type" sits between them):
+    #   "Name":{"name":"Name","type":"Proxy","vehicleType":"HTTP",...}
+    # Strategy: split on commas, track current "name" value, emit it only when
+    # we later see "vehicleType":"HTTP" in the same provider object.
+    local http_names
+    http_names=$(printf '%s' "$response" | tr ',' '\n' | awk '
+        /"name":"/ {
+            s = $0; sub(/.*"name":"/, "", s); sub(/".*/, "", s)
+            cur = s
+        }
+        /"vehicleType":"HTTP"/ { if (cur != "") print cur; cur = "" }
+        /"vehicleType":"/ && !/"vehicleType":"HTTP"/ { cur = "" }
+    ')
+
+    if [ -z "$http_names" ]; then
+        msg "No HTTP proxy providers found — nothing to update"
+        return 0
+    fi
+
+    local tmpfile
+    tmpfile=$(mktemp /tmp/clash-hotplug-XXXXXX)
+
+    printf '%s\n' "$http_names" | while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        encoded=$(urlencode "$name")
+        if api_put "/providers/proxies/${encoded}"; then
+            echo "ok" >> "$tmpfile"
+            msg "Updated proxy provider: ${name}"
+        else
+            echo "fail" >> "$tmpfile"
+            warn "Failed to update proxy provider: ${name}"
+        fi
+    done
+
+    local ok fail
+    ok=$(grep -c "^ok$" "$tmpfile" 2>/dev/null); ok=${ok:-0}
+    fail=$(grep -c "^fail$" "$tmpfile" 2>/dev/null); fail=${fail:-0}
+    rm -f "$tmpfile"
+
+    msg "Proxy providers update done: ${ok} ok, ${fail} failed"
+}
+
+# ---------------------------------------------------------------------------
+# update_rule_providers
+#
+# Updates all rule providers. Rule providers have no static built-ins
+# equivalent to DIRECT/REJECT, so every entry is updated unconditionally.
+#
+# API reference:
+#   GET  /providers/rules          — list all rule providers
+#   PUT  /providers/rules/{name}   — trigger re-download for one provider
+# ---------------------------------------------------------------------------
+update_rule_providers() {
+    local response
+    response=$(api_get "/providers/rules")
+    if [ -z "$response" ]; then
+        warn "Failed to get rule providers list (API unavailable?)"
+        return 1
+    fi
+
+    # Extract all provider names from the JSON response.
+    # Format: {"name":"VALUE",...}
+    local names
+    names=$(printf '%s' "$response" \
+        | grep -o '"name":"[^"]*"' \
+        | sed 's/"name":"//;s/"//')
+
+    if [ -z "$names" ]; then
+        msg "No rule providers found"
+        return 0
+    fi
+
+    local tmpfile
+    tmpfile=$(mktemp /tmp/clash-hotplug-XXXXXX)
+
+    printf '%s\n' "$names" | while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        encoded=$(urlencode "$name")
+        if api_put "/providers/rules/${encoded}"; then
+            echo "ok" >> "$tmpfile"
+        else
+            echo "fail" >> "$tmpfile"
+            warn "Failed to update rule provider: ${name}"
+        fi
+    done
+
+    local ok fail
+    ok=$(grep -c "^ok$" "$tmpfile" 2>/dev/null); ok=${ok:-0}
+    fail=$(grep -c "^fail$" "$tmpfile" 2>/dev/null); fail=${fail:-0}
+    rm -f "$tmpfile"
+
+    msg "Rule providers update done: ${ok} ok, ${fail} failed"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+update_proxy_providers
+update_rule_providers
+
+msg "Provider update complete"
