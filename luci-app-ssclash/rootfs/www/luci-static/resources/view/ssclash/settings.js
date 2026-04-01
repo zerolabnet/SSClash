@@ -1570,6 +1570,8 @@ return view.extend({
         const currentProxyMode = settings.proxyMode || await detectCurrentProxyMode();
         const proxyModeSection = createProxyModeSection(currentProxyMode);
         const tunStackSection = createTunStackSection(settings.tunStack || 'system');
+        tunStackSection.style.display = (currentProxyMode === 'tun' || currentProxyMode === 'mixed') ? 'block' : 'none';
+
         const proxyModeSelectForTun = proxyModeSection.querySelector('#proxy-mode-select');
 
         function updateTunStackVisibility() {
@@ -1579,7 +1581,6 @@ return view.extend({
         if (proxyModeSelectForTun) {
             proxyModeSelectForTun.addEventListener('change', updateTunStackVisibility);
         }
-        setTimeout(updateTunStackVisibility, 0);
 
         const autoDetectOptions = createAutoDetectOptions(settings.mode, settings.autoDetectLan, settings.autoDetectWan);
         const interfaceSelector = createInterfaceSelector(interfaces, selectedInterfaces, settings.mode);
