@@ -42,8 +42,8 @@ opkg install iptables-mod-tproxy
 Download the SSClash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.8.0/luci-app-ssclash_3.8.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.8.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_3.8.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v3.9.0/luci-app-ssclash_3.9.0-r1_all.ipk -o /tmp/luci-app-ssclash_3.9.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_3.9.0-r1_all.ipk
 rm /tmp/*.ipk
 ```
 
@@ -69,19 +69,19 @@ cd /opt/clash/bin
 For **amd64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.21/mihomo-linux-amd64-compatible-v1.19.21.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.22/mihomo-linux-amd64-compatible-v1.19.22.gz -o clash.gz
 ```
 
 For **arm64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.21/mihomo-linux-arm64-v1.19.21.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.22/mihomo-linux-arm64-v1.19.22.gz -o clash.gz
 ```
 
 For **mipsel_24kc** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.21/mihomo-linux-mipsle-softfloat-v1.19.21.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.22/mihomo-linux-mipsle-softfloat-v1.19.22.gz -o clash.gz
 ```
 
 Need a different architecture? Visit the [MetaCubeX Release Page](https://github.com/MetaCubeX/mihomo/releases) and choose the one that matches your device.

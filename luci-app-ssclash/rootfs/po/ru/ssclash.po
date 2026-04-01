@@ -245,6 +245,21 @@ msgstr "Режим TUN-интерфейса. Создаёт виртуальны
 msgid "Hybrid mode (best for gaming). TCP via TPROXY (stable), UDP via TUN (low latency). Optimal for online games requiring fast UDP."
 msgstr "Гибридный режим (лучший для игр). TCP через TPROXY (стабильно), UDP через TUN (низкая задержка). Оптимален для онлайн‑игр, требующих быстрого UDP."
 
+msgid "TUN Stack"
+msgstr "Стек TUN"
+
+msgid "Choose Mihomo TUN stack. `system` is fastest but depends on kernel capabilities; `gvisor` is more compatible; `mixed` combines both."
+msgstr "Выберите стек TUN для Mihomo. `system` самый быстрый, но зависит от возможностей ядра; `gvisor` более совместим; `mixed` сочетает оба подхода."
+
+msgid "system: kernel network stack. If TCP in TUN fails on your device, try gvisor."
+msgstr "system: сетевой стек ядра. Если TCP в TUN не работает на вашем устройстве, попробуйте gvisor."
+
+msgid "gvisor: userspace stack, usually most compatible across routers."
+msgstr "gvisor: userspace-стек, обычно самый совместимый на разных роутерах."
+
+msgid "mixed: hybrid stack mode supported by some Mihomo builds."
+msgstr "mixed: гибридный режим стека, поддерживаемый некоторыми сборками Mihomo."
+
 msgid "Automatic Interface Detection"
 msgstr "Автоматическое определение интерфейсов"
 

@@ -26,6 +26,7 @@ PROXY_MODE="tproxy"
 AUTO_DETECT_LAN="true"
 AUTO_DETECT_WAN="true"
 BLOCK_QUIC="true"
+TUN_STACK="system"
 DETECTED_LAN=""
 DETECTED_WAN=""
 INCLUDED_INTERFACES=""
@@ -34,12 +35,26 @@ EXCLUDED_INTERFACES=""
 FAKE_IP_FILTER_MODE="blacklist"
 FAKEIP_WHITELIST_IPS=""
 
+# Unified marks / policy routing tables
+MARK_TPROXY="0x0001"
+MARK_CLASH_ROUTING="0x0002"
+MARK_TUN_UDP="0x0003"
+TABLE_TPROXY="100"
+TABLE_TUN_UDP="101"
+PREF_TPROXY="1000"
+PREF_TUN_UDP="1001"
+
+# Flag files: if present on stop(), bridge-nf-call values are restored to 1.
+BRIDGE_NF_CALL_FLAG="/tmp/clash/bridge_nf_call_iptables_flag"
+BRIDGE_NF_CALL6_FLAG="/tmp/clash/bridge_nf_call_ip6tables_flag"
+
 # =============================================================================
 # SECTION: Utilities — logging, settings loader, IP helpers
 # =============================================================================
 
 # Function to log messages
 msg() {
+    [ "$CLASH_RULES_QUIET" = "1" ] && return 0
     logger -p daemon.info -st "clash-rules[$$]" "$*"
 }
 
@@ -63,6 +78,7 @@ load_all_settings_once() {
             "AUTO_DETECT_LAN") AUTO_DETECT_LAN="$value" ;;
             "AUTO_DETECT_WAN") AUTO_DETECT_WAN="$value" ;;
             "BLOCK_QUIC") BLOCK_QUIC="$value" ;;
+            "TUN_STACK") TUN_STACK="$value" ;;
             "DETECTED_LAN") DETECTED_LAN="$value" ;;
             "DETECTED_WAN") DETECTED_WAN="$value" ;;
             "INCLUDED_INTERFACES") INCLUDED_INTERFACES="$value" ;;
@@ -76,15 +92,63 @@ load_all_settings_once() {
     [ -n "$AUTO_DETECT_LAN" ] && settings_part="$settings_part, Auto-detect LAN: $AUTO_DETECT_LAN"
     [ -n "$AUTO_DETECT_WAN" ] && settings_part="$settings_part, Auto-detect WAN: $AUTO_DETECT_WAN"
     [ -n "$BLOCK_QUIC" ] && settings_part="$settings_part, Block QUIC: $BLOCK_QUIC"
+    [ -n "$TUN_STACK" ] && settings_part="$settings_part, TUN stack: $TUN_STACK"
     [ -n "$DETECTED_LAN" ] && settings_part="$settings_part, Detected LAN: $DETECTED_LAN"
     [ -n "$DETECTED_WAN" ] && settings_part="$settings_part, Detected WAN: $DETECTED_WAN"
     [ -n "$INCLUDED_INTERFACES" ] && settings_part="$settings_part, Included interfaces: '$INCLUDED_INTERFACES'"
     [ -n "$EXCLUDED_INTERFACES" ] && settings_part="$settings_part, Excluded interfaces: '$EXCLUDED_INTERFACES'"
 
-    if [ -n "$settings_part" ]; then
-        msg "Settings loaded: ${settings_part#*, }"
-    else
-        msg "Settings loaded (no values specified in settings file)."
+    if [ "$CLASH_RULES_QUIET" != "1" ]; then
+        if [ -n "$settings_part" ]; then
+            msg "Settings loaded: ${settings_part#*, }"
+        else
+            msg "Settings loaded (no values specified in settings file)."
+        fi
+    fi
+}
+
+# Parse routing-mark from config.yaml (defaults to 2 if absent).
+get_config_routing_mark() {
+    [ -f "$CONFIG_FILE" ] || {
+        echo "2"
+        return
+    }
+    local mark
+    mark=$(awk '
+        /^[[:space:]]*routing-mark:[[:space:]]*/ {
+            gsub(/^[[:space:]]*routing-mark:[[:space:]]*/, "")
+            sub(/[[:space:]]*#.*/, "")
+            gsub(/[[:space:]]+$/, "")
+            print $0
+            exit
+        }' "$CONFIG_FILE")
+    [ -n "$mark" ] && echo "$mark" || echo "2"
+}
+
+preflight_check_tun_stack() {
+    case "$PROXY_MODE" in
+        "tun"|"mixed") ;;
+        *) return 0 ;;
+    esac
+
+    case "$TUN_STACK" in
+        "system")
+            if [ ! -c /dev/net/tun ]; then
+                warn "TUN stack 'system' selected but /dev/net/tun is missing. TCP in TUN may fail; consider stack=gvisor."
+            fi
+            ;;
+        "gvisor"|"mixed")
+            msg "TUN stack '$TUN_STACK' selected"
+            ;;
+        *)
+            warn "Unknown TUN stack '$TUN_STACK'; expected system/gvisor/mixed"
+            ;;
+    esac
+
+    local routing_mark
+    routing_mark=$(get_config_routing_mark)
+    if [ "$routing_mark" != "2" ]; then
+        warn "routing-mark in config.yaml is '$routing_mark' (expected 2). Loop prevention rules rely on mark 2."
     fi
 }
 
@@ -801,7 +865,7 @@ apply_nft_dhcp_mangle() {
 # For nftables - prevent routing loops with marks in mangle chain
 apply_nft_loop_prevention_mangle() {
     # Exclude packets already marked by Clash (routing-mark: 2 → 0x0002)
-    nft add rule inet clash CLASH_MARK meta mark 0x0002 return
+    nft add rule inet clash CLASH_MARK meta mark "$MARK_CLASH_ROUTING" return
     # Exclude packets with any high-byte mark (e.g. connmark restored by other tools)
     nft add rule inet clash CLASH_MARK meta mark and 0xff00 != 0 return
     msg "Loop prevention rules applied in mangle"
@@ -848,23 +912,23 @@ apply_nft_server_exclusions_mangle() {
 apply_nft_marking_mangle() {
     local fake_ip_range="$1"
     # In MIXED mode UDP uses a separate mark so it can be routed to a different table
-    local udp_mark="0x0001"
+    local udp_mark="$MARK_TPROXY"
     if [ "$PROXY_MODE" = "mixed" ]; then
-        udp_mark="0x0003"
+        udp_mark="$MARK_TUN_UDP"
     fi
 
     if [ -n "$fake_ip_range" ]; then
-        nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto tcp meta mark set 0x0001 counter
+        nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto tcp meta mark set "$MARK_TPROXY" counter
         nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto udp meta mark set "$udp_mark" counter
         msg "Marking applied only for fake-ip range: $fake_ip_range (UDP mark: $udp_mark)"
     else
-        nft add rule inet clash CLASH_MARK meta l4proto tcp meta mark set 0x0001 counter
+        nft add rule inet clash CLASH_MARK meta l4proto tcp meta mark set "$MARK_TPROXY" counter
         nft add rule inet clash CLASH_MARK meta l4proto udp meta mark set "$udp_mark" counter
         msg "Marking applied for all traffic (UDP mark: $udp_mark)"
     fi
     # Additionally mark traffic to fakeip whitelist IP-CIDR entries (whitelist mode only)
     if [ "$FAKE_IP_FILTER_MODE" = "whitelist" ] && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
-        nft add rule inet clash CLASH_MARK ip daddr @fakeip_whitelist meta l4proto tcp meta mark set 0x0001 counter
+        nft add rule inet clash CLASH_MARK ip daddr @fakeip_whitelist meta l4proto tcp meta mark set "$MARK_TPROXY" counter
         nft add rule inet clash CLASH_MARK ip daddr @fakeip_whitelist meta l4proto udp meta mark set "$udp_mark" counter
         msg "Marking also applied for fakeip whitelist IP-CIDR nft set (UDP mark: $udp_mark)"
     fi
@@ -880,21 +944,22 @@ apply_nft_tproxy_proxy() {
             msg "TPROXY rules skipped (TUN mode - all traffic routes via clash-tun)"
             ;;
         "mixed")
-            nft add rule inet clash proxy meta mark 0x0001 meta l4proto tcp tproxy ip to 127.0.0.1:7894 counter
+            nft add rule inet clash proxy meta mark "$MARK_TPROXY" meta l4proto tcp tproxy ip to 127.0.0.1:7894 counter
             msg "TPROXY rules applied for TCP only (MIXED mode)"
             ;;
         *)
-            nft add rule inet clash proxy meta mark 0x0001 meta l4proto tcp tproxy ip to 127.0.0.1:7894 counter
-            nft add rule inet clash proxy meta mark 0x0001 meta l4proto udp tproxy ip to 127.0.0.1:7894 counter
+            nft add rule inet clash proxy meta mark "$MARK_TPROXY" meta l4proto tcp tproxy ip to 127.0.0.1:7894 counter
+            nft add rule inet clash proxy meta mark "$MARK_TPROXY" meta l4proto udp tproxy ip to 127.0.0.1:7894 counter
             msg "TPROXY rules applied for TCP and UDP (TPROXY mode)"
             ;;
     esac
 }
 
-# For nftables - allow forwarding to/from clash-tun (TUN/MIXED mode)
-# Injects accept rules at the top of inet fw4 forward chain so that traffic
-# forwarded between LAN and clash-tun is not dropped by the zone-based firewall.
-# Falls back to an inet clash forward base chain when fw4 is absent.
+# For nftables - allow input/forwarding to/from clash-tun (TUN/MIXED mode)
+# Injects accept rules at the top of inet fw4 input and forward chains so that
+# traffic forwarded between LAN and clash-tun (and traffic entering the router
+# via clash-tun) is not dropped by the zone-based firewall.
+# Falls back to inet clash base chains when fw4 is absent.
 apply_nft_tun_forward_rules() {
     case "$PROXY_MODE" in
         "tun"|"mixed") ;;
@@ -902,32 +967,88 @@ apply_nft_tun_forward_rules() {
     esac
 
     if nft list table inet fw4 >/dev/null 2>&1; then
+        nft insert rule inet fw4 input iifname "clash-tun" accept comment "ssclash-fwd" 2>/dev/null
         nft insert rule inet fw4 forward iifname "clash-tun" accept comment "ssclash-fwd" 2>/dev/null
         nft insert rule inet fw4 forward oifname "clash-tun" accept comment "ssclash-fwd" 2>/dev/null
-        msg "Inserted clash-tun forward rules into inet fw4 (TUN/MIXED mode)"
+        msg "Inserted clash-tun input+forward rules into inet fw4 (TUN/MIXED mode)"
     else
-        # No fw4 table — add a standalone forward base chain in our own table
+        nft add chain inet clash ssclash_input '{ type filter hook input priority -1; policy accept; }' 2>/dev/null
+        nft add rule inet clash ssclash_input iifname "clash-tun" accept 2>/dev/null
         nft add chain inet clash forward '{ type filter hook forward priority -1; policy accept; }' 2>/dev/null
         nft add rule inet clash forward iifname "clash-tun" accept 2>/dev/null
         nft add rule inet clash forward oifname "clash-tun" accept 2>/dev/null
-        msg "Added clash-tun forward rules in inet clash (no fw4 found)"
+        msg "Added clash-tun input+forward rules in inet clash (no fw4 found)"
     fi
 }
 
-# For nftables - remove the forward rules added by apply_nft_tun_forward_rules
+# For nftables - remove the input+forward rules added by apply_nft_tun_forward_rules
 teardown_nft_tun_forward_rules() {
-    # Remove rules injected into inet fw4 forward (identified by comment)
     if nft list table inet fw4 >/dev/null 2>&1; then
-        nft -a list chain inet fw4 forward 2>/dev/null \
-            | awk '/ssclash-fwd/ { for(i=1;i<=NF;i++) if($i=="handle") { print $(i+1); break } }' \
-            | while IFS= read -r handle; do
-                [ -n "$handle" ] && nft delete rule inet fw4 forward handle "$handle" 2>/dev/null
-              done
-        msg "Removed clash-tun forward rules from inet fw4"
+        local chain
+        for chain in input forward; do
+            nft -a list chain inet fw4 "$chain" 2>/dev/null \
+                | awk '/ssclash-fwd/ { for(i=1;i<=NF;i++) if($i=="handle") { print $(i+1); break } }' \
+                | while IFS= read -r handle; do
+                    [ -n "$handle" ] && nft delete rule inet fw4 "$chain" handle "$handle" 2>/dev/null
+                  done
+        done
+        msg "Removed clash-tun input+forward rules from inet fw4"
     fi
-    # The inet clash table (including any forward chain we may have added) is
+    # The inet clash table (including any chains we may have added) is
     # deleted wholesale by the nft delete table inet clash call in stop(), so
     # no extra cleanup is needed here for the fallback path.
+}
+
+# Validate that the clash-tun forward accept rules are present in the active
+# firewall.  Returns 0 if rules are in place (or not needed for current mode),
+# 1 if they are missing and need to be repaired.
+#
+# Used by service_started() and can be called directly: clash-rules validate_forward
+validate_forward_state() {
+    load_all_settings_once
+    case "$PROXY_MODE" in
+        "tun"|"mixed") ;;
+        *) return 0 ;;
+    esac
+
+    if hash nft 2>/dev/null; then
+        if nft list table inet fw4 >/dev/null 2>&1; then
+            nft -a list chain inet fw4 input 2>/dev/null | grep -q "ssclash-fwd" || return 1
+            nft -a list chain inet fw4 forward 2>/dev/null | grep -q "ssclash-fwd" || return 1
+            return 0
+        else
+            nft list chain inet clash ssclash_input >/dev/null 2>&1 || return 1
+            nft list chain inet clash forward >/dev/null 2>&1 || return 1
+            return 0
+        fi
+    elif hash iptables 2>/dev/null; then
+        iptables -t filter -C INPUT -i clash-tun -j ACCEPT 2>/dev/null || return 1
+        iptables -t filter -C FORWARD -i clash-tun -j ACCEPT 2>/dev/null || return 1
+        iptables -t filter -C FORWARD -o clash-tun -j ACCEPT 2>/dev/null || return 1
+        return 0
+    fi
+    return 0
+}
+
+# Idempotently restore the clash-tun forward accept rules.
+# Called from:
+#  - /var/etc/ssclash.include  (by fw4 on every reload — most critical path)
+#  - service_started() in init.d/clash (on procd respawn)
+repair_forward_rules() {
+    load_all_settings_once
+    case "$PROXY_MODE" in
+        "tun"|"mixed") ;;
+        *) return 0 ;;
+    esac
+    if hash nft 2>/dev/null; then
+        # Tear down any stale rules first (handles duplicate-insert edge cases),
+        # then re-apply fresh rules against the newly rebuilt fw4 table.
+        teardown_nft_tun_forward_rules
+        apply_nft_tun_forward_rules
+    elif hash iptables 2>/dev/null; then
+        teardown_iptables_tun_forward_rules
+        apply_iptables_tun_forward_rules
+    fi
 }
 
 # For nftables - apply interface exclusion rules in output chain
@@ -962,7 +1083,7 @@ apply_nft_output_rules() {
     apply_nft_interface_exclusion_output "$excluded_interfaces"
 
     # Exclude already marked packets
-    nft add rule inet clash output meta mark 0x0002 return
+    nft add rule inet clash output meta mark "$MARK_CLASH_ROUTING" return
     nft add rule inet clash output meta mark and 0xff00 != 0 return
 
     # Skip exclusion rules in whitelist mode
@@ -988,23 +1109,23 @@ apply_nft_output_rules() {
     apply_nft_clash_exclusions_output
 
     # In MIXED mode router-originated UDP must use the TUN mark (0x0003 → table 101 → clash-tun)
-    local output_udp_mark="0x0001"
+    local output_udp_mark="$MARK_TPROXY"
     if [ "$PROXY_MODE" = "mixed" ]; then
-        output_udp_mark="0x0003"
+        output_udp_mark="$MARK_TUN_UDP"
     fi
 
     if [ -n "$fake_ip_range" ]; then
-        nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto tcp meta mark set 0x0001 counter
+        nft add rule inet clash output ip daddr "$fake_ip_range" meta mark 0 meta l4proto tcp meta mark set "$MARK_TPROXY" counter
         nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto udp meta mark set "$output_udp_mark" counter
         msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range"
     else
-        nft add rule inet clash output meta mark 0 meta l4proto tcp meta mark set 0x0001
+        nft add rule inet clash output meta mark 0 meta l4proto tcp meta mark set "$MARK_TPROXY"
         nft add rule inet clash output meta mark 0 meta l4proto udp meta mark set "$output_udp_mark"
         msg "OUTPUT: Marking applied for all traffic"
     fi
     # Additionally mark locally generated traffic to fakeip whitelist IP-CIDR entries
     if [ "$fake_ip_filter_mode" = "whitelist" ] && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
-        nft add rule inet clash output ip daddr @fakeip_whitelist meta l4proto tcp meta mark set 0x0001 counter
+        nft add rule inet clash output ip daddr @fakeip_whitelist meta mark 0 meta l4proto tcp meta mark set "$MARK_TPROXY" counter
         nft add rule inet clash output ip daddr @fakeip_whitelist meta l4proto udp meta mark set "$output_udp_mark" counter
         msg "OUTPUT: Marking also applied for fakeip whitelist IP-CIDR nft set"
     fi
@@ -1051,7 +1172,7 @@ apply_iptables_dhcp_rules() {
 # For iptables - prevent routing loops with marks
 apply_iptables_loop_prevention() {
     # Exclude packets already marked by Clash (routing-mark: 2 → 0x0002)
-    iptables -t mangle -A CLASH_PROCESS -m mark --mark 0x0002 -j RETURN
+    iptables -t mangle -A CLASH_PROCESS -m mark --mark "$MARK_CLASH_ROUTING" -j RETURN
     # Exclude packets with any high-byte mark (e.g. connmark restored by other tools)
     iptables -t mangle -A CLASH_PROCESS -m mark --mark 0xff00/0xff00 -j RETURN
     msg "Loop prevention rules applied"
@@ -1110,34 +1231,34 @@ apply_iptables_tproxy_rules() {
     case "$PROXY_MODE" in
         "tun")
             if [ -n "$fake_ip_range" ]; then
-                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j MARK --set-mark 0x0001
-                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j MARK --set-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j MARK --set-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j MARK --set-mark "$MARK_TPROXY"
                 msg "TUN mark rules applied for fake-ip range: $fake_ip_range"
             else
-                iptables -t mangle -A CLASH_PROCESS -p tcp -j MARK --set-mark 0x0001
-                iptables -t mangle -A CLASH_PROCESS -p udp -j MARK --set-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -p tcp -j MARK --set-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -p udp -j MARK --set-mark "$MARK_TPROXY"
                 msg "TUN mark rules applied for all traffic (via clash-tun)"
             fi
             ;;
         "mixed")
             if [ -n "$fake_ip_range" ]; then
-                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j MARK --set-mark 0x0003
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j MARK --set-mark "$MARK_TUN_UDP"
                 msg "MIXED rules applied for fake-ip range: $fake_ip_range (TCP TPROXY, UDP TUN mark 0x0003)"
             else
-                iptables -t mangle -A CLASH_PROCESS -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-                iptables -t mangle -A CLASH_PROCESS -p udp -j MARK --set-mark 0x0003
+                iptables -t mangle -A CLASH_PROCESS -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -p udp -j MARK --set-mark "$MARK_TUN_UDP"
                 msg "MIXED rules applied for all traffic (TCP TPROXY, UDP TUN mark 0x0003)"
             fi
             ;;
         *)
             if [ -n "$fake_ip_range" ]; then
-                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -d "$fake_ip_range" -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
                 msg "TPROXY rules applied only for fake-ip range: $fake_ip_range"
             else
-                iptables -t mangle -A CLASH_PROCESS -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-                iptables -t mangle -A CLASH_PROCESS -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
                 msg "TPROXY rules applied for all traffic"
             fi
             ;;
@@ -1146,18 +1267,18 @@ apply_iptables_tproxy_rules() {
     if [ "$FAKE_IP_FILTER_MODE" = "whitelist" ] && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
         case "$PROXY_MODE" in
             "tun")
-                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j MARK --set-mark 0x0001
-                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j MARK --set-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j MARK --set-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j MARK --set-mark "$MARK_TPROXY"
                 msg "TUN: fakeip whitelist ipset rules applied"
                 ;;
             "mixed")
-                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j MARK --set-mark 0x0003
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j MARK --set-mark "$MARK_TUN_UDP"
                 msg "MIXED: fakeip whitelist ipset rules applied"
                 ;;
             *)
-                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
-                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark 0x0001
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
                 msg "TPROXY: fakeip whitelist ipset rules applied"
                 ;;
         esac
@@ -1186,7 +1307,7 @@ apply_iptables_output_rules() {
     apply_iptables_interface_exclusion_output "$excluded_interfaces"
 
     # Exclude already marked packets
-    iptables -t mangle -A CLASH_LOCAL -m mark --mark 0x0002 -j RETURN
+    iptables -t mangle -A CLASH_LOCAL -m mark --mark "$MARK_CLASH_ROUTING" -j RETURN
     iptables -t mangle -A CLASH_LOCAL -m mark --mark 0xff00/0xff00 -j RETURN
 
     # Skip exclusion rules in whitelist mode
@@ -1219,23 +1340,23 @@ apply_iptables_output_rules() {
     iptables -t mangle -A CLASH_LOCAL -p udp --sport 7890:7894 -j RETURN
 
     # In MIXED mode router-originated UDP uses TUN mark (0x0003 → table 101 → clash-tun)
-    local ipt_output_udp_mark="0x0001"
+    local ipt_output_udp_mark="$MARK_TPROXY"
     if [ "$PROXY_MODE" = "mixed" ]; then
-        ipt_output_udp_mark="0x0003"
+        ipt_output_udp_mark="$MARK_TUN_UDP"
     fi
 
     if [ -n "$fake_ip_range" ]; then
-        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -d "$fake_ip_range" -j MARK --set-mark 0x0001
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -d "$fake_ip_range" -j MARK --set-mark "$MARK_TPROXY"
         iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -d "$fake_ip_range" -j MARK --set-mark "$ipt_output_udp_mark"
         msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range"
     else
-        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -j MARK --set-mark 0x0001
+        iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p tcp -j MARK --set-mark "$MARK_TPROXY"
         iptables -t mangle -A CLASH_LOCAL -m mark --mark 0 -p udp -j MARK --set-mark "$ipt_output_udp_mark"
         msg "OUTPUT: Marking applied for all traffic"
     fi
     # Additionally mark locally generated traffic to fakeip whitelist IP-CIDR entries
     if [ "$fake_ip_filter_mode" = "whitelist" ] && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
-        iptables -t mangle -A CLASH_LOCAL -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j MARK --set-mark 0x0001
+        iptables -t mangle -A CLASH_LOCAL -m set --match-set "$FAKEIP_IPSET_NAME" dst -p tcp -j MARK --set-mark "$MARK_TPROXY"
         iptables -t mangle -A CLASH_LOCAL -m set --match-set "$FAKEIP_IPSET_NAME" dst -p udp -j MARK --set-mark "$ipt_output_udp_mark"
         msg "OUTPUT: fakeip whitelist ipset rules applied"
     fi
@@ -1252,16 +1373,18 @@ apply_iptables_tun_forward_rules() {
         *) return 0 ;;
     esac
 
+    iptables -t filter -I INPUT 1 -i clash-tun -j ACCEPT 2>/dev/null
     iptables -t filter -I FORWARD 1 -i clash-tun -j ACCEPT 2>/dev/null
     iptables -t filter -I FORWARD 1 -o clash-tun -j ACCEPT 2>/dev/null
-    msg "Inserted clash-tun FORWARD rules (iptables, TUN/MIXED mode)"
+    msg "Inserted clash-tun INPUT+FORWARD rules (iptables, TUN/MIXED mode)"
 }
 
-# For iptables - remove the FORWARD rules added by apply_iptables_tun_forward_rules
+# For iptables - remove the INPUT+FORWARD rules added by apply_iptables_tun_forward_rules
 teardown_iptables_tun_forward_rules() {
+    iptables -t filter -D INPUT -i clash-tun -j ACCEPT 2>/dev/null
     iptables -t filter -D FORWARD -i clash-tun -j ACCEPT 2>/dev/null
     iptables -t filter -D FORWARD -o clash-tun -j ACCEPT 2>/dev/null
-    msg "Removed clash-tun FORWARD rules (iptables)"
+    msg "Removed clash-tun INPUT+FORWARD rules (iptables)"
 }
 
 # Apply nftables rules dynamically
@@ -1513,83 +1636,72 @@ update_rules() {
     fi
 }
 
-# Set up ip route/ip rule entries based on PROXY_MODE
-# TPROXY:  fwmark 0x0001 → table 100 → lo  (kernel delivers to TPROXY socket)
-# TUN:     fwmark 0x0001 → table 100 → clash-tun (route set here if already up, else by service_started)
-# MIXED:   fwmark 0x0001 → table 100 → lo  (TCP TPROXY)
-#          fwmark 0x0003 → table 101 → clash-tun (UDP TUN; route set here if already up, else by service_started)
 # =============================================================================
 # SECTION: Policy routing — ip rule / ip route tables for tproxy/tun/mixed
 # =============================================================================
+#
+# TUN route lifecycle
+# -------------------
+# clash-tun is created by mihomo after the process starts, not by us.
+# The package ships a static hotplug script:
+#   /etc/hotplug.d/net/99-clash-tun
+# When the kernel raises RTM_NEWLINK for clash-tun, OpenWrt runs that script
+# with ACTION=add INTERFACE=clash-tun, which calls `clash-rules tun_route_setup`
+# synchronously.  No background processes, no polling.
+#
+# service_started() → tun_route_watch covers the fast-respawn edge case where
+# clash-tun is still up when procd fires the callback (interface did not
+# disappear between respawns), so tun_route_setup is called directly.
 
 setup_routing_rules() {
+    # Keep setup idempotent and mode-safe across restarts/reloads.
+    teardown_routing_rules
     case "$PROXY_MODE" in
         "tun")
-            ip rule add fwmark 0x0001 table 100 2>/dev/null
-            msg "Routing: fwmark 0x0001 → table 100 → clash-tun (TUN mode)"
-            _wait_and_set_tun_route 100
+            # local default dev lo prevents marked packets from being
+            # black-holed while clash-tun is still coming up; the hotplug
+            # script replaces this with "default dev clash-tun" once the
+            # interface appears.
+            ip route replace local default dev lo table "$TABLE_TPROXY" 2>/dev/null
+            ip rule add pref "$PREF_TPROXY" fwmark "$MARK_TPROXY" table "$TABLE_TPROXY" 2>/dev/null
+            msg "Routing: fwmark $MARK_TPROXY → table $TABLE_TPROXY pref $PREF_TPROXY (TUN mode)"
+            # Best-effort: install the real route immediately in case clash-tun
+            # is already up (fast procd respawn, interface survived restart).
+            ip route replace default dev clash-tun table "$TABLE_TPROXY" 2>/dev/null && \
+                msg "TUN route set immediately (clash-tun already up)"
             ;;
         "mixed")
-            ip route add local default dev lo table 100 2>/dev/null
-            ip rule add fwmark 0x0001 table 100 2>/dev/null
-            ip rule add fwmark 0x0003 table 101 2>/dev/null
-            msg "Routing: TCP fwmark 0x0001 → table 100 → lo (TPROXY), UDP fwmark 0x0003 → table 101 → clash-tun (MIXED mode)"
-            _wait_and_set_tun_route 101
+            ip route replace local default dev lo table "$TABLE_TPROXY" 2>/dev/null
+            ip rule add pref "$PREF_TPROXY" fwmark "$MARK_TPROXY" table "$TABLE_TPROXY" 2>/dev/null
+            ip rule add pref "$PREF_TUN_UDP" fwmark "$MARK_TUN_UDP" table "$TABLE_TUN_UDP" 2>/dev/null
+            msg "Routing: TCP fwmark $MARK_TPROXY → table $TABLE_TPROXY pref $PREF_TPROXY, UDP fwmark $MARK_TUN_UDP → table $TABLE_TUN_UDP pref $PREF_TUN_UDP (MIXED mode)"
+            # Best-effort: install the real route immediately if already up.
+            ip route replace default dev clash-tun table "$TABLE_TUN_UDP" 2>/dev/null && \
+                msg "TUN route set immediately (clash-tun already up)"
             ;;
         *)
-            ip route add local default dev lo table 100 2>/dev/null
-            ip rule add fwmark 0x0001 table 100 2>/dev/null
-            msg "Routing: fwmark 0x0001 → table 100 → lo (TPROXY mode)"
+            ip route replace local default dev lo table "$TABLE_TPROXY" 2>/dev/null
+            ip rule add pref "$PREF_TPROXY" fwmark "$MARK_TPROXY" table "$TABLE_TPROXY" 2>/dev/null
+            msg "Routing: fwmark $MARK_TPROXY → table $TABLE_TPROXY pref $PREF_TPROXY (TPROXY mode)"
             ;;
     esac
 }
 
-# Wait for clash-tun to appear and set the policy route in the given table.
-#
-# This is a one-shot background job: it runs once per mihomo (re)start,
-# waits up to 30 s for clash-tun, sets the route, and exits.
-#
-# Called from:
-#   setup_routing_rules()  — on initial clash-rules start
-#   tun_route_watch        — on every procd respawn (via service_started)
-#
-# procd already handles respawn; we only need to restore the route after
-# each respawn because the kernel removes it when clash-tun disappears.
-_wait_and_set_tun_route() {
-    local table="$1"
-
-    # Run entirely in the background so we never block the caller.
-    (
-        exec < /dev/null > /dev/null 2>&1
-        local t=0
-        while [ "$t" -lt 30 ]; do
-            if [ -d "/sys/class/net/clash-tun" ]; then
-                # Wait for operstate to leave "down"
-                local state
-                state=$(cat "/sys/class/net/clash-tun/operstate" 2>/dev/null)
-                if [ "$state" != "down" ] && [ -n "$state" ]; then
-                    ip route replace default dev clash-tun table "$table" 2>/dev/null && \
-                        msg "TUN route set: clash-tun → table $table (operstate=$state)"
-                    exit 0
-                fi
-            fi
-            sleep 1
-            t=$((t + 1))
-        done
-        warn "TUN route: clash-tun not ready after 30s (table $table)"
-    ) &
-}
-
-
 # Remove all possible routing entries created by setup_routing_rules.
-# Cleans up all modes unconditionally (safe: errors suppressed)
-# so that stop() works correctly even if PROXY_MODE changed since start.
+# Cleans up all modes unconditionally (errors suppressed) so that stop()
+# works correctly even if PROXY_MODE changed since start.
 teardown_routing_rules() {
-    ip route del local default dev lo table 100 2>/dev/null
-    ip route del default dev clash-tun table 100 2>/dev/null
-    ip route del default dev clash-tun table 101 2>/dev/null
-    ip rule del fwmark 0x0001 table 100 2>/dev/null
-    ip rule del fwmark 0x0003 table 101 2>/dev/null
+    # Flush entire routing tables rather than removing individual routes.
+    # This is more robust across mode switches
+    # approach — any stale entries from previous configurations are cleared.
+    ip route flush table "$TABLE_TPROXY" 2>/dev/null
+    ip route flush table "$TABLE_TUN_UDP" 2>/dev/null
+
+    # ip rule del removes only ONE matching rule per call; use an unbounded
+    # while loop (same pattern as tun_route_reset_rule) so all duplicates
+    # accumulated from unclean restarts are fully removed.
+    while ip rule del fwmark "$MARK_TPROXY" table "$TABLE_TPROXY" 2>/dev/null; do :; done
+    while ip rule del fwmark "$MARK_TUN_UDP" table "$TABLE_TUN_UDP" 2>/dev/null; do :; done
 }
 
 # Atomically refresh the fakeip whitelist IP-CIDR set contents (nft set or ipset)
@@ -1656,23 +1768,144 @@ update_fakeip_whitelist_sets() {
 # Add/replace the TUN device route in its policy routing table.
 # Called by init.d service_started() after the TUN interface is confirmed UP.
 # This must run after setup_routing_rules() has already added the ip rules.
+tun_route_reset_rule() {
+    local mark="$1"
+    local table="$2"
+    local pref="$3"
+    # Keep a single deterministic rule entry: drop all duplicates and re-add one.
+    while ip rule del fwmark "$mark" table "$table" 2>/dev/null; do :; done
+    ip rule add pref "$pref" fwmark "$mark" table "$table" 2>/dev/null
+}
+
+tun_route_ensure_policy_state() {
+    case "$PROXY_MODE" in
+        "tun")
+            tun_route_reset_rule "$MARK_TPROXY" "$TABLE_TPROXY" "$PREF_TPROXY"
+            ip route replace local default dev lo table "$TABLE_TPROXY" 2>/dev/null
+            ;;
+        "mixed")
+            tun_route_reset_rule "$MARK_TPROXY" "$TABLE_TPROXY" "$PREF_TPROXY"
+            tun_route_reset_rule "$MARK_TUN_UDP" "$TABLE_TUN_UDP" "$PREF_TUN_UDP"
+            ip route replace local default dev lo table "$TABLE_TPROXY" 2>/dev/null
+            ;;
+    esac
+}
+
 tun_route_setup() {
     load_all_settings_once
     case "$PROXY_MODE" in
         "tun")
-            ip route replace default dev clash-tun table 100 2>/dev/null && \
-                msg "TUN route set: clash-tun → table 100 (TUN mode)" || \
-                msg "WARNING: Failed to set TUN route (clash-tun may not be up yet)"
+            tun_route_ensure_policy_state
+            ip route replace default dev clash-tun table "$TABLE_TPROXY" 2>/dev/null && \
+                msg "TUN policy routing restored: fwmark $MARK_TPROXY → table $TABLE_TPROXY (default via clash-tun)" || \
+                msg "WARNING: Failed to restore TUN route (clash-tun may not be up yet)"
             ;;
         "mixed")
-            ip route replace default dev clash-tun table 101 2>/dev/null && \
-                msg "TUN route set: clash-tun → table 101 (MIXED mode UDP)" || \
-                msg "WARNING: Failed to set TUN route (clash-tun may not be up yet)"
+            tun_route_ensure_policy_state
+            ip route replace default dev clash-tun table "$TABLE_TUN_UDP" 2>/dev/null && \
+                msg "MIXED UDP policy routing restored: fwmark $MARK_TUN_UDP → table $TABLE_TUN_UDP (default via clash-tun)" || \
+                msg "WARNING: Failed to restore MIXED UDP route (clash-tun may not be up yet)"
             ;;
         *)
             msg "tun_route_setup: nothing to do for proxy mode '$PROXY_MODE'"
             ;;
     esac
+}
+
+policy_rule_exists() {
+    local mark="$1"
+    local table="$2"
+    local mark_raw="${mark#0x}"
+    mark_raw=$(echo "$mark_raw" | tr 'A-F' 'a-f' | sed 's/^0*//')
+    [ -z "$mark_raw" ] && mark_raw="0"
+    # Accept iproute2 formatting variants:
+    #  - fwmark 0x3 lookup 101
+    #  - fwmark 0x0003/0xffffffff lookup 101
+    #  - fwmark 3 lookup 101
+    ip rule show 2>/dev/null | grep -Eq "fwmark (0x0*${mark_raw}|${mark_raw})(/[0-9xa-fA-F]+)? .*lookup ${table}( |$)"
+}
+
+policy_route_exists() {
+    local table="$1"
+    local route_sig="$2"
+    ip route show table "$table" 2>/dev/null | grep -q "$route_sig"
+}
+
+validate_policy_routing_state() {
+    load_all_settings_once
+    case "$PROXY_MODE" in
+        "tun")
+            policy_rule_exists "$MARK_TPROXY" "$TABLE_TPROXY" || return 1
+            policy_route_exists "$TABLE_TPROXY" "default dev clash-tun" || return 1
+            return 0
+            ;;
+        "mixed")
+            policy_rule_exists "$MARK_TPROXY" "$TABLE_TPROXY" || return 1
+            policy_rule_exists "$MARK_TUN_UDP" "$TABLE_TUN_UDP" || return 1
+            policy_route_exists "$TABLE_TPROXY" "local default dev lo" || return 1
+            policy_route_exists "$TABLE_TUN_UDP" "default dev clash-tun" || return 1
+            return 0
+            ;;
+        *)
+            policy_rule_exists "$MARK_TPROXY" "$TABLE_TPROXY" || return 1
+            policy_route_exists "$TABLE_TPROXY" "local default dev lo" || return 1
+            return 0
+            ;;
+    esac
+}
+
+repair_policy_routing_state() {
+    load_all_settings_once
+    case "$PROXY_MODE" in
+        "tun"|"mixed")
+            tun_route_setup
+            ;;
+        *)
+            setup_routing_rules
+            ;;
+    esac
+    validate_policy_routing_state
+}
+
+# =============================================================================
+# SECTION: bridge-nf-call — prevent double-processing on bridged interfaces
+# =============================================================================
+
+# When kmod-br-netfilter is loaded and TPROXY is active, bridged frames are
+# pushed through iptables/nftables a second time, causing duplicate TPROXY
+# processing and performance degradation. Disable it on start, restore on stop.
+disable_bridge_nf_call() {
+    case "$PROXY_MODE" in
+        "tproxy"|"mixed") ;;
+        *) return 0 ;;
+    esac
+    lsmod | grep -q br_netfilter || return 0
+    local val
+    val=$(sysctl -e -n net.bridge.bridge-nf-call-iptables 2>/dev/null)
+    if [ "$val" = "1" ]; then
+        mkdir -p /tmp/clash
+        touch "$BRIDGE_NF_CALL_FLAG"
+        sysctl -q -w net.bridge.bridge-nf-call-iptables=0
+        msg "Disabled bridge-nf-call-iptables (was 1, TPROXY active)"
+    fi
+    val=$(sysctl -e -n net.bridge.bridge-nf-call-ip6tables 2>/dev/null)
+    if [ "$val" = "1" ]; then
+        mkdir -p /tmp/clash
+        touch "$BRIDGE_NF_CALL6_FLAG"
+        sysctl -q -w net.bridge.bridge-nf-call-ip6tables=0
+        msg "Disabled bridge-nf-call-ip6tables (was 1, TPROXY active)"
+    fi
+}
+
+restore_bridge_nf_call() {
+    if rm "$BRIDGE_NF_CALL_FLAG" 2>/dev/null; then
+        sysctl -q -w net.bridge.bridge-nf-call-iptables=1
+        msg "Restored bridge-nf-call-iptables to 1"
+    fi
+    if rm "$BRIDGE_NF_CALL6_FLAG" 2>/dev/null; then
+        sysctl -q -w net.bridge.bridge-nf-call-ip6tables=1
+        msg "Restored bridge-nf-call-ip6tables to 1"
+    fi
 }
 
 # =============================================================================
@@ -1690,6 +1923,7 @@ start() {
 
     # Load all settings once from the file
     load_all_settings_once
+    preflight_check_tun_stack
 
     local server_ips fake_ip_config fake_ip_range fake_ip_filter_mode
     server_ips=$(extract_server_ips)
@@ -1763,7 +1997,31 @@ start() {
         return 1
     fi
 
+    disable_bridge_nf_call
+
     msg "Clash rules script started successfully (proxy mode: $PROXY_MODE, interface mode: $MODE)"
+
+    # Register a fw4 include hook so our clash-tun forward accept rules survive
+    # any future firewall reload. When fw4 restarts it wipes the inet fw4 table
+    # (dropping our ssclash-fwd rules) but leaves ip rules/routes and the inet
+    # clash table intact. The include file causes fw4 to call repair_forward_rules
+    # after it rebuilds its own tables. Only active in TUN/MIXED modes.
+    case "$PROXY_MODE" in
+        "tun"|"mixed")
+            mkdir -p /var/etc
+            cat > /var/etc/ssclash.include <<-'FW4EOF'
+CLASH_RULES_QUIET=1 /opt/clash/bin/clash-rules repair_forward_rules 2>/dev/null || true
+FW4EOF
+            uci -q batch <<-'UCI_EOF'
+delete firewall.ssclash
+set firewall.ssclash=include
+set firewall.ssclash.path=/var/etc/ssclash.include
+set firewall.ssclash.fw4_compatible=1
+commit firewall
+UCI_EOF
+            msg "Registered fw4 include hook: /var/etc/ssclash.include"
+            ;;
+    esac
 }
 
 stop() {
@@ -1798,6 +2056,13 @@ stop() {
         return 1
     fi
 
+    # Remove the fw4 include hook registered in start().  Delete the UCI entry
+    # first so that a concurrent fw4 reload does not try to run a missing file.
+    uci -q delete firewall.ssclash 2>/dev/null; uci -q commit firewall 2>/dev/null
+    rm -f /var/etc/ssclash.include
+
+    restore_bridge_nf_call
+
     msg "Clash rules script stopped successfully (all routing rules cleaned up)"
 }
 
@@ -1828,17 +2093,48 @@ case "$1" in
         ;;
     tun_route_watch)
         # Called by service_started() on every procd respawn.
-        # Spawns a one-shot background job that waits for clash-tun and
-        # restores the policy-routing table entry.
+        # The package-installed hotplug script handles the normal case
+        # (clash-tun coming up after mihomo starts). This call covers the
+        # fast-respawn edge case where clash-tun is still up when this runs.
         load_all_settings_once
         case "$PROXY_MODE" in
-            "tun")   _wait_and_set_tun_route 100 ;;
-            "mixed") _wait_and_set_tun_route 101 ;;
+            "tun"|"mixed") tun_route_setup ;;
             *) msg "tun_route_watch: nothing to do for proxy mode '$PROXY_MODE'" ;;
         esac
         ;;
+    validate_policy)
+        if validate_policy_routing_state; then
+            msg "Policy routing state is healthy"
+            exit 0
+        else
+            warn "Policy routing state check failed"
+            exit 1
+        fi
+        ;;
+    repair_policy)
+        if repair_policy_routing_state; then
+            msg "Policy routing state repaired successfully"
+            exit 0
+        else
+            warn "Policy routing repair failed"
+            exit 1
+        fi
+        ;;
+    validate_forward)
+        if validate_forward_state; then
+            msg "Forward firewall rules are healthy"
+            exit 0
+        else
+            warn "Forward firewall rules missing"
+            exit 1
+        fi
+        ;;
+    repair_forward_rules)
+        repair_forward_rules
+        exit $?
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|update|update-ip-whitelist|tun_route_setup|tun_route_watch}"
+        echo "Usage: $0 {start|stop|restart|update|update-ip-whitelist|tun_route_setup|tun_route_watch|validate_policy|repair_policy|validate_forward|repair_forward_rules}"
         exit 1
         ;;
 esac

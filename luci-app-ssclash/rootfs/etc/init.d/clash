@@ -306,18 +306,27 @@ reload_service() {
 
 service_started() {
 	# Called by procd every time the service process (re)starts, including respawns.
-	# We must restore the clash-tun policy-routing entry here because:
-	#   - procd respawn only restarts the binary; it does NOT re-run start_service()
-	#   - the kernel removes "ip route … dev clash-tun" as soon as the interface disappears
-	#   - _spawn_tun_route_daemon() is only spawned during the initial clash-rules start
-	# Calling tun_route_watch spawns a background watcher that polls for clash-tun
-	# (up to 30 s) and issues "ip route replace" as soon as the interface appears.
+	# The package-installed /etc/hotplug.d/net/99-clash-tun handles the normal
+	# case: when mihomo creates clash-tun, the kernel event fires the hotplug script
+	# which calls `clash-rules tun_route_setup`.
+	# tun_route_watch covers the fast-respawn edge case where clash-tun is still up
+	# when procd fires this callback (interface did not disappear between respawns).
 	local proxy_mode=""
 	[ -f "$SETTINGS_FILE" ] && proxy_mode=$(grep '^PROXY_MODE=' "$SETTINGS_FILE" | cut -d= -f2 | tr -d '[:space:]')
 	case "$proxy_mode" in
 		mixed|tun)
-			[ -f "$CLASH_RULES" ] && "$CLASH_RULES" tun_route_watch
-			msg "service_started: TUN route watcher spawned (mode: $proxy_mode)"
+			if [ -f "$CLASH_RULES" ]; then
+				"$CLASH_RULES" tun_route_watch
+				local i=0
+				while [ "$i" -lt 30 ]; do
+					[ -d /sys/class/net/clash-tun ] && break
+					sleep 1
+					i=$((i + 1))
+				done
+				"$CLASH_RULES" tun_route_setup
+				"$CLASH_RULES" repair_policy
+				"$CLASH_RULES" repair_forward_rules
+			fi
 			;;
 	esac
 }

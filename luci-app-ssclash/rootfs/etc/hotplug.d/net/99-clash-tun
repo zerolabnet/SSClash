@@ -1,0 +1,16 @@
+#!/bin/sh
+# Part of the SSClash package — installed to /etc/hotplug.d/net/99-clash-tun
+#
+# Reacts to mihomo creating the clash-tun device (ACTION=add) and immediately
+# installs the ip route pointing to it. This is faster than waiting for the
+# 30 s poll in service_started() and covers the normal startup path.
+
+[ -x /opt/clash/bin/clash-rules ] || exit 0
+
+case "$ACTION" in
+    add)
+        [ "$INTERFACE" = "clash-tun" ] || exit 0
+        /opt/clash/bin/clash-rules tun_route_setup
+        /opt/clash/bin/clash-rules repair_policy
+        ;;
+esac

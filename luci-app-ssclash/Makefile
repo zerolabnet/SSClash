@@ -4,7 +4,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ssclash
-PKG_VERSION:=3.8.0
+PKG_VERSION:=3.9.0
 PKG_RELEASE:=1
 PKG_MAINTAINER:=ZeroChaos <dev@null.la>
 
@@ -73,6 +73,8 @@ define Package/$(PKG_NAME)/install
 
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
 	$(INSTALL_BIN) ./rootfs/etc/hotplug.d/iface/40-clash $(1)/etc/hotplug.d/iface/
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/net
+	$(INSTALL_BIN) ./rootfs/etc/hotplug.d/net/99-clash-tun $(1)/etc/hotplug.d/net/
 
 	$(INSTALL_DIR) $(1)/opt/clash/bin
 	$(INSTALL_BIN) ./rootfs/opt/clash/bin/clash-rules $(1)/opt/clash/bin/
@@ -94,6 +96,11 @@ define Package/$(PKG_NAME)/install
 
 	$(INSTALL_DIR) $(1)/opt/clash/lst
 
+ifdef CONFIG_USE_APK
+	$(INSTALL_DIR) $(1)/etc/apk/protected_paths.d
+	$(INSTALL_DATA) ./rootfs/etc/apk/protected_paths.d/ssclash.list $(1)/etc/apk/protected_paths.d/
+endif
+
 	@if [ -f "$(PKG_BUILD_DIR)/po/ru/ssclash.lmo" ]; then \
 		$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n; \
 		$(INSTALL_DATA) "$(PKG_BUILD_DIR)/po/ru/ssclash.lmo" \
@@ -101,8 +108,17 @@ define Package/$(PKG_NAME)/install
 	fi
 endef
 
+define Package/$(PKG_NAME)/preinst
+#!/bin/sh
+[ -f /opt/clash/config.yaml ] && cp -p /opt/clash/config.yaml /tmp/ssclash_config.yaml.bak
+exit 0
+endef
+
 define Package/$(PKG_NAME)/postinst
 #!/bin/sh
+if [ -f /tmp/ssclash_config.yaml.bak ]; then
+	mv /tmp/ssclash_config.yaml.bak /opt/clash/config.yaml
+fi
 [ -n "$$IPKG_INSTROOT" ] || {
 	/etc/init.d/rpcd reload
 	rm -f /tmp/luci-*
@@ -136,6 +152,8 @@ define Package/$(PKG_NAME)/postrm
 	rm -rf /www/luci-static/resources/view/ssclash
 	rm -f /usr/lib/lua/luci/i18n/ssclash.*.lmo
 	rm -f /etc/hotplug.d/iface/40-clash
+	rm -f /etc/hotplug.d/net/99-clash-tun
+	rm -f /etc/apk/protected_paths.d/ssclash.list
 }
 endef
 
