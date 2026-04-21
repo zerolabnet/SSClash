@@ -11,7 +11,7 @@ RULESET_TMPFS="/tmp/clash/ruleset"
 RULESET_LINK="${CLASH_DIR}/ruleset"
 PROXY_PROVIDERS_TMPFS="/tmp/clash/proxy_providers"
 PROXY_PROVIDERS_LINK="${CLASH_DIR}/proxy_providers"
-DNS_BACKUP_FILE="/tmp/clash/clash_dns_backup"
+DNS_BACKUP_FILE="/opt/clash/.dns_backup"
 SETTINGS_FILE="${CLASH_DIR}/settings"
 USE_TMPFS_RULES="true"
 
@@ -109,18 +109,25 @@ setup_clash_directories() {
 setup_dns() {
 	local dns_server="127.0.0.1#7874"
 
-	# Save original cachesize and noresolv values so restore_dns can put them back
-	# exactly as they were, rather than simply deleting them (which would lose any
-	# value the admin had explicitly configured before Clash was started).
-	local orig_cachesize
-	local orig_noresolv
-	orig_cachesize=$(uci get dhcp.@dnsmasq[0].cachesize 2>/dev/null)
-	orig_noresolv=$(uci get dhcp.@dnsmasq[0].noresolv 2>/dev/null)
-	printf 'CACHESIZE=%s\nNORESOLV=%s\n' "$orig_cachesize" "$orig_noresolv" > "$DNS_BACKUP_FILE"
-
 	# Check if the server is already added
 	local existing_server
 	existing_server=$(uci get dhcp.@dnsmasq[0].server 2>/dev/null | grep "$dns_server")
+
+	# Save original cachesize and noresolv values so restore_dns can put them back
+	# exactly as they were, rather than simply deleting them (which would lose any
+	# value the admin had explicitly configured before Clash was started).
+	if [ ! -f "$DNS_BACKUP_FILE" ]; then
+		mkdir -p "$(dirname "$DNS_BACKUP_FILE")" 2>/dev/null
+		if [ -n "$existing_server" ]; then
+			printf 'CACHESIZE=\nNORESOLV=\n' > "$DNS_BACKUP_FILE"
+			msg "Detected stale DNS state from prior unclean shutdown; using safe defaults for restore"
+		else
+			local orig_cachesize orig_noresolv
+			orig_cachesize=$(uci get dhcp.@dnsmasq[0].cachesize 2>/dev/null)
+			orig_noresolv=$(uci get dhcp.@dnsmasq[0].noresolv 2>/dev/null)
+			printf 'CACHESIZE=%s\nNORESOLV=%s\n' "$orig_cachesize" "$orig_noresolv" > "$DNS_BACKUP_FILE"
+		fi
+	fi
 
 	if [ -z "$existing_server" ]; then
 		uci add_list dhcp.@dnsmasq[0].server="$dns_server" || {

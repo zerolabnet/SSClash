@@ -713,6 +713,10 @@ async function detectSystemArchitecture() {
     return 'amd64';
 }
 
+function getDownloadArch(arch) {
+    return arch === 'amd64' ? 'amd64-compatible' : arch;
+}
+
 // =============================================================================
 // SECTION: Mihomo kernel management — version check, download
 // =============================================================================
@@ -794,20 +798,51 @@ async function downloadMihomoKernel(downloadUrl, version, arch) {
 
         const fileName = `mihomo-linux-${arch}-${version}.gz`;
         const downloadPath = `/tmp/${fileName}`;
-
-        const curlResult = await fs.exec('curl', ['-L', downloadUrl, '-o', downloadPath]);
-        if (curlResult.code !== 0) throw new Error(_('Download failed'));
-
-        const extractResult = await fs.exec('gzip', ['-d', downloadPath]);
-        if (extractResult.code !== 0) throw new Error(_('Extraction failed'));
-
         const extractedFile = downloadPath.replace('.gz', '');
         const targetFile = '/opt/clash/bin/clash';
 
-        await fs.exec('mv', [extractedFile, targetFile]);
-        await fs.exec('chmod', ['+x', targetFile]);
+        await fs.exec('rm', ['-f', downloadPath, extractedFile]).catch(function() {});
 
-        ui.addNotification(null, E('p', _('Mihomo kernel downloaded and installed successfully!')), 'info');
+        const curlResult = await fs.exec('curl', ['-fL', '--retry', '2', '--connect-timeout', '15', downloadUrl, '-o', downloadPath]);
+        if (curlResult.code !== 0) {
+            throw new Error(_('Download failed: %s').format((curlResult.stderr || '').trim() || _('unknown error')));
+        }
+
+        const extractResult = await fs.exec('gzip', ['-df', downloadPath]);
+        if (extractResult.code !== 0) {
+            throw new Error(_('Extraction failed: %s').format((extractResult.stderr || '').trim() || _('unknown error')));
+        }
+
+        await fs.exec('/etc/init.d/clash', ['stop']).catch(function() {});
+
+        const mvResult = await fs.exec('mv', ['-f', extractedFile, targetFile]);
+        if (mvResult.code !== 0) {
+            throw new Error(_('Failed to install new binary: %s').format((mvResult.stderr || '').trim() || _('unknown error')));
+        }
+
+        const chmodResult = await fs.exec('chmod', ['0755', targetFile]);
+        if (chmodResult.code !== 0) {
+            throw new Error(_('Failed to set executable permissions: %s').format((chmodResult.stderr || '').trim() || _('unknown error')));
+        }
+
+        const verifyResult = await fs.exec('test', ['-x', targetFile]);
+        if (verifyResult.code !== 0) {
+            let currentMode = '';
+            try {
+                const statResult = await fs.exec('stat', ['-c', '%a', targetFile]);
+                if (statResult.code === 0) currentMode = (statResult.stdout || '').trim();
+            } catch (_e) {}
+
+            ui.addNotification(null, E('p',
+                _('WARNING: Binary at %s is not executable after chmod (mode: %s). Check filesystem permissions, then manually run: chmod 0755 %s')
+                .format(targetFile, currentMode || _('unknown'), targetFile)
+            ), 'warning');
+            return false;
+        }
+
+        ui.addNotification(null, E('p',
+            _('Mihomo kernel installed successfully. The service was stopped for a safe replacement — press "Restart Service" to activate the new kernel.')
+        ), 'info');
         return true;
     } catch (e) {
         ui.addNotification(null, E('p', _('Failed to download mihomo kernel: %s').format(e.message)), 'error');
@@ -1006,45 +1041,46 @@ function createProxyModeSection(currentProxyMode) {
         E('option', { 'value': 'mixed' }, 'MIXED (TCP+UDP)')
     ]);
 
-    const descriptionsDiv = E('div', {}, [
-        E('div', {
-            'id': 'tproxy-desc',
-            'style': 'display: none; margin-top: 8px; padding: 10px; background: #f0f8ff; border-left: 3px solid #0066cc; border-radius: 3px; font-size: 12px;'
-        }, [
-            E('strong', 'TPROXY: '),
-            _('Transparent proxy mode. Routes both TCP and UDP through TPROXY port 7894. Best compatibility, requires kernel TPROXY support.')
-        ]),
-        E('div', {
-            'id': 'tun-desc',
-            'style': 'display: none; margin-top: 8px; padding: 10px; background: #f0fff0; border-left: 3px solid #00cc00; border-radius: 3px; font-size: 12px;'
-        }, [
-            E('strong', 'TUN: '),
-            _('TUN interface mode. Creates virtual network interface for all traffic. Better performance, works without TPROXY. Requires TUN kernel module.')
-        ]),
-        E('div', {
-            'id': 'mixed-desc',
-            'style': 'display: none; margin-top: 8px; padding: 10px; background: #fff8f0; border-left: 3px solid #ff9900; border-radius: 3px; font-size: 12px;'
-        }, [
-            E('strong', 'MIXED: '),
-            _('Hybrid mode (best for gaming). TCP via TPROXY (stable), UDP via TUN (low latency). Optimal for online games requiring fast UDP.')
-        ])
-    ]);
+    const hint = E('div', {
+        'id': 'proxy-mode-hint',
+        'style': 'margin-top: 8px; padding: 10px; border-left: 3px solid #777; border-radius: 3px; font-size: 12px; background: #f9f9f9;'
+    });
+
+    function updateHint() {
+        const value = select.value;
+        hint.innerHTML = '';
+        if (value === 'tproxy') {
+            hint.style.borderLeftColor = '#0066cc';
+            hint.appendChild(E('strong', {}, 'TPROXY: '));
+            hint.appendChild(document.createTextNode(
+                _('Transparent proxy mode. Routes both TCP and UDP through TPROXY port 7894. Best compatibility, requires kernel TPROXY support.')
+            ));
+        } else if (value === 'tun') {
+            hint.style.borderLeftColor = '#28a745';
+            hint.appendChild(E('strong', {}, 'TUN: '));
+            hint.appendChild(document.createTextNode(
+                _('TUN interface mode. Creates virtual network interface for all traffic. Better performance, works without TPROXY. Requires TUN kernel module.')
+            ));
+        } else {
+            hint.style.borderLeftColor = '#ff9900';
+            hint.appendChild(E('strong', {}, 'MIXED: '));
+            hint.appendChild(document.createTextNode(
+                _('Hybrid mode (best for gaming). TCP via TPROXY (stable), UDP via TUN (low latency). Optimal for online games requiring fast UDP.')
+            ));
+        }
+    }
 
     fieldContainer.appendChild(select);
-    fieldContainer.appendChild(descriptionsDiv);
+    fieldContainer.appendChild(hint);
     container.appendChild(fieldContainer);
 
     setTimeout(function() {
         select.value = currentProxyMode || 'tproxy';
+        updateHint();
         select.dispatchEvent(new Event('change'));
     }, 0);
 
-    select.addEventListener('change', function() {
-        const selectedMode = this.value;
-        document.getElementById('tproxy-desc').style.display = selectedMode === 'tproxy' ? 'block' : 'none';
-        document.getElementById('tun-desc').style.display = selectedMode === 'tun' ? 'block' : 'none';
-        document.getElementById('mixed-desc').style.display = selectedMode === 'mixed' ? 'block' : 'none';
-    });
+    select.addEventListener('change', updateHint);
 
     return container;
 }
@@ -1338,7 +1374,13 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
 
     container.appendChild(E('h3', _('Additional Settings')));
 
-    const settingsContainer = E('div', { 'style': 'display: grid; gap: 10px; margin: 15px 0;' });
+    const settingsContainer = E('div', {
+        'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px 14px; margin: 15px 0;'
+    });
+
+    const cardStyle = 'display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; cursor: pointer;';
+    const cardHeaderStyle = 'display: flex; align-items: center; gap: 8px;';
+    const cardDescStyle = 'font-size: 11px; color: #666; line-height: 1.35;';
 
     const blockQuicCheckbox = E('input', {
         'type': 'checkbox',
@@ -1347,15 +1389,17 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
 
     const blockQuicLabel = E('label', {
         'for': 'block_quic',
-        'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; cursor: pointer;'
+        'style': cardStyle
     }, [
-        blockQuicCheckbox,
-        E('span', '🚫 ' + _('Block QUIC traffic (UDP port 443)'))
+        E('span', { 'style': cardHeaderStyle }, [
+            blockQuicCheckbox,
+            E('span', '🚫 ' + _('Block QUIC traffic (UDP port 443)'))
+        ]),
+        E('span', { 'style': cardDescStyle },
+            _('When enabled, blocks QUIC traffic on UDP port 443. This can improve proxy effectiveness for some services like YouTube.'))
     ]);
 
     settingsContainer.appendChild(blockQuicLabel);
-    settingsContainer.appendChild(E('div', { 'class': 'cbi-section-descr', 'style': 'font-size: 12px;' },
-        _('When enabled, blocks QUIC traffic on UDP port 443. This can improve proxy effectiveness for some services like YouTube.')));
 
     const tmpfsCheckbox = E('input', {
         'type': 'checkbox',
@@ -1364,15 +1408,17 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
 
     const tmpfsLabel = E('label', {
         'for': 'use_tmpfs_rules',
-        'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; cursor: pointer;'
+        'style': cardStyle
     }, [
-        tmpfsCheckbox,
-        E('span', '💾 ' + _('Store rules and proxy providers in RAM (tmpfs)'))
+        E('span', { 'style': cardHeaderStyle }, [
+            tmpfsCheckbox,
+            E('span', '💾 ' + _('Store rules and proxy providers in RAM (tmpfs)'))
+        ]),
+        E('span', { 'style': cardDescStyle },
+            _('When enabled, rulesets and proxy-providers directories are placed on tmpfs for faster access (at the cost of using RAM). Disable to keep them on persistent storage.'))
     ]);
 
     settingsContainer.appendChild(tmpfsLabel);
-    settingsContainer.appendChild(E('div', { 'class': 'cbi-section-descr', 'style': 'font-size: 12px;' },
-        _('When enabled, rulesets and proxy-providers directories are placed on tmpfs for faster access (at the cost of using RAM). Disable to keep them on persistent storage.')));
 
     setTimeout(() => {
         blockQuicCheckbox.checked = blockQuic;
@@ -1386,69 +1432,60 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
 
     const hwidLabel = E('label', {
         'for': 'enable_hwid',
-        'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; cursor: pointer;'
+        'style': cardStyle
     }, [
-        hwidCheckbox,
-        E('span', '🔑 ' + _('Add HWID headers to subscriptions'))
+        E('span', { 'style': cardHeaderStyle }, [
+            hwidCheckbox,
+            E('span', '🔑 ' + _('Add HWID headers to subscriptions'))
+        ]),
+        E('span', { 'style': cardDescStyle },
+            _('Automatically adds HWID headers to proxy-providers for device tracking (Remnawave compatibility).'))
     ]);
 
     settingsContainer.appendChild(hwidLabel);
-    settingsContainer.appendChild(E('div', { 'class': 'cbi-section-descr', 'style': 'font-size: 12px; margin-bottom: 10px;' },
-        _('Automatically adds HWID headers to proxy-providers for device tracking (Remnawave compatibility).')));
 
     const hwidAdvancedContainer = E('div', {
         'id': 'hwid_advanced',
-        'style': 'display: none; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fff;'
+        'style': 'display: none; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; margin-top: 10px;'
     });
 
-    const userAgentContainer = E('div', {
-        'style': 'margin-bottom: 15px;'
-    });
-    const userAgentLabel = E('label', {
-        'for': 'hwid_user_agent',
-        'style': 'display: block; font-weight: bold; margin-bottom: 5px;'
-    }, _('User-Agent'));
-    const userAgentInput = E('input', {
-        'type': 'text',
-        'id': 'hwid_user_agent',
-        'class': 'cbi-input-text',
-        'value': hwidUserAgent || 'SSClash',
-        'placeholder': 'SSClash'
-    });
-    const userAgentDesc = E('div', {
-        'style': 'font-size: 11px; color: #666; margin-top: 5px;'
-    }, _('Application identifier sent in HTTP headers'));
+    const hwidFieldsGrid = E('div', {
+        'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px;'
+    }, [
+        E('div', {}, [
+            E('label', {
+                'for': 'hwid_user_agent',
+                'style': 'display: block; font-weight: 600; font-size: 12px; margin-bottom: 3px;'
+            }, _('User-Agent')),
+            E('input', {
+                'type': 'text',
+                'id': 'hwid_user_agent',
+                'class': 'cbi-input-text',
+                'value': hwidUserAgent || 'SSClash',
+                'placeholder': 'SSClash'
+            })
+        ]),
+        E('div', {}, [
+            E('label', {
+                'for': 'hwid_device_os',
+                'style': 'display: block; font-weight: 600; font-size: 12px; margin-bottom: 3px;'
+            }, _('Device OS')),
+            E('input', {
+                'type': 'text',
+                'id': 'hwid_device_os',
+                'class': 'cbi-input-text',
+                'value': hwidDeviceOS || 'OpenWrt',
+                'placeholder': 'OpenWrt'
+            })
+        ])
+    ]);
 
-    userAgentContainer.appendChild(userAgentLabel);
-    userAgentContainer.appendChild(userAgentInput);
-    userAgentContainer.appendChild(userAgentDesc);
+    const hwidHint = E('div', {
+        'style': 'font-size: 11px; color: #666; margin-top: 8px;'
+    }, _('Values sent in HTTP headers of proxy-provider requests (User-Agent / x-device-os).'));
 
-    const deviceOsContainer = E('div', {
-        'style': 'margin-bottom: 15px;'
-    });
-    const deviceOsLabel = E('label', {
-        'for': 'hwid_device_os',
-        'style': 'display: block; font-weight: bold; margin-bottom: 5px;'
-    }, _('Device OS'));
-    const deviceOsInput = E('input', {
-        'type': 'text',
-        'id': 'hwid_device_os',
-        'class': 'cbi-input-text',
-        'value': hwidDeviceOS || 'OpenWrt',
-        'placeholder': 'OpenWrt'
-    });
-    const deviceOsDesc = E('div', {
-        'style': 'font-size: 11px; color: #666; margin-top: 5px;'
-    }, _('Operating system name sent in headers'));
-
-    deviceOsContainer.appendChild(deviceOsLabel);
-    deviceOsContainer.appendChild(deviceOsInput);
-    deviceOsContainer.appendChild(deviceOsDesc);
-
-    hwidAdvancedContainer.appendChild(userAgentContainer);
-    hwidAdvancedContainer.appendChild(deviceOsContainer);
-
-    settingsContainer.appendChild(hwidAdvancedContainer);
+    hwidAdvancedContainer.appendChild(hwidFieldsGrid);
+    hwidAdvancedContainer.appendChild(hwidHint);
 
     setTimeout(() => {
         hwidCheckbox.checked = enableHwid;
@@ -1466,6 +1503,7 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
     });
 
     container.appendChild(settingsContainer);
+    container.appendChild(hwidAdvancedContainer);
     return container;
 }
 
@@ -1602,16 +1640,17 @@ return view.extend({
 
                 try {
                     const arch = await detectSystemArchitecture();
+                    const downloadArch = getDownloadArch(arch);
                     const release = await getLatestMihomoRelease();
 
                     if (!release) throw new Error(_('Failed to get release information'));
 
-                    const assetName = `mihomo-linux-${arch}-${release.version}.gz`;
+                    const assetName = `mihomo-linux-${downloadArch}-${release.version}.gz`;
                     const asset = release.assets.find(a => a.name === assetName);
 
-                    if (!asset) throw new Error(_('No binary found for architecture: %s').format(arch));
+                    if (!asset) throw new Error(_('No binary found for architecture: %s').format(downloadArch));
 
-                    const success = await downloadMihomoKernel(asset.browser_download_url, release.version, arch);
+                    const success = await downloadMihomoKernel(asset.browser_download_url, release.version, downloadArch);
 
                     if (success && updateKernelStatusFn) {
                         updateKernelStatusFn();
@@ -1635,23 +1674,8 @@ return view.extend({
             }
         }, _('Refresh Status'));
 
-        const restartKernelButton = E('button', {
-            'class': 'btn',
-            'style': 'margin-left: 10px;',
-            'click': async function() {
-                try {
-                    await fs.exec('/etc/init.d/clash', ['restart']);
-                    ui.addNotification(null, E('p', _('Clash service restarted successfully.')), 'info');
-                    if (updateKernelStatusFn) {
-                        updateKernelStatusFn();
-                    }
-                } catch (e) {
-                    ui.addNotification(null, E('p', _('Failed to restart Clash service: %s').format(e.message)), 'error');
-                }
-            }
-        }, _('Restart Service'));
         const kernelButtonContainer = E('div', { 'style': 'margin: 20px 0; text-align: center;' }, [
-            downloadButton, refreshButton, restartKernelButton
+            downloadButton, refreshButton
         ]);
 
         const kernelInfoSection = E('div', {
@@ -1898,32 +1922,31 @@ return view.extend({
             }
         }
 
-        const statusSection = E('div', { 'class': 'cbi-section', 'style': 'margin-top: 20px; margin-bottom: 20px;' }, [
-            E('div', { 'style': 'display: grid; gap: 8px;' }, [
-                E('div', {
-                    'style': 'padding: 8px 12px; background: #f8f9fa; border-left: 4px solid #0066cc; border-radius: 4px; font-size: 12px;'
-                }, [
-                    E('span', { 'style': 'color: #0066cc;' }, '📋 '),
-                    E('span', {
-                        'id': 'current-status',
-                        'style': 'color: #0066cc; font-weight: bold;'
-                    })
-                ]),
-
-                E('div', {
-                    'style': 'padding: 8px 12px; background: #e8f5e8; border-left: 4px solid #28a745; border-radius: 4px; font-size: 12px;'
-                }, [
-                    E('span', {
-                        'id': 'detection-info',
-                        'style': 'color: #155724;'
-                    })
-                ]),
-
-                E('div', {
-                    'style': 'padding: 8px 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; font-size: 12px;'
-                }, [
-                    E('span', { 'style': 'color: #856404; font-weight: bold;' }, '⚠️ ' + _('Restart Clash service after saving changes'))
-                ])
+        const statusSection = E('div', {
+            'class': 'cbi-section',
+            'style': 'margin: 20px 0; padding: 0; border: 1px solid #ddd; border-radius: 6px; overflow: hidden; font-size: 12px;'
+        }, [
+            E('div', {
+                'style': 'padding: 8px 12px; background: #f8f9fa; border-left: 4px solid #0066cc;'
+            }, [
+                E('span', { 'style': 'color: #0066cc;' }, '📋 '),
+                E('span', {
+                    'id': 'current-status',
+                    'style': 'color: #0066cc; font-weight: bold;'
+                })
+            ]),
+            E('div', {
+                'style': 'padding: 8px 12px; background: #e8f5e8; border-left: 4px solid #28a745; border-top: 1px solid #ddd;'
+            }, [
+                E('span', {
+                    'id': 'detection-info',
+                    'style': 'color: #155724;'
+                })
+            ]),
+            E('div', {
+                'style': 'padding: 8px 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-top: 1px solid #ddd;'
+            }, [
+                E('span', { 'style': 'color: #856404; font-weight: bold;' }, '⚠️ ' + _('Restart Clash service after saving changes'))
             ])
         ]);
 

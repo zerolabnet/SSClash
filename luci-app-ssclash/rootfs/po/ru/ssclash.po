@@ -71,8 +71,14 @@ msgstr "Конфигурация Clash"
 msgid "Your current Clash config. When applied, the changes will be saved and the service will be restarted."
 msgstr "Ваша текущая конфигурация Clash. При применении изменения будут сохранены, а служба перезапущена."
 
-msgid "Save & Apply Configuration"
-msgstr "Сохранить и применить"
+msgid "Save & Restart core"
+msgstr "Сохранить и перезапустить ядро"
+
+msgid "Save & Reload config"
+msgstr "Сохранить и перезагрузить конфиг"
+
+msgid "More actions"
+msgstr "Другие действия"
 
 msgid "Unable to start and enable service: %s"
 msgstr "Не удалось запустить и включить службу: %s"
@@ -107,6 +113,32 @@ msgstr "Служба успешно перезагружена."
 msgid "Unable to save contents: %s"
 msgstr "Не удалось сохранить содержимое: %s"
 
+### Модуль config.js — Reload config / Restart core ###
+
+msgid "Reload configuration via Mihomo API — active connections are preserved. Firewall rules are NOT rebuilt; use \"Save & Restart core\" when changing external-controller / tproxy-port / tun / fake-ip-filter-mode / proxy mode."
+msgstr "Перезагрузка конфигурации через API Mihomo — активные соединения сохраняются. Правила файрвола НЕ перестраиваются; используйте «Сохранить и перезапустить ядро» при изменении external-controller / tproxy-port / tun / fake-ip-filter-mode / режима проксирования."
+
+msgid "Full restart: stops and starts the Mihomo core, rebuilds firewall rules and refreshes subscription IPs. Active connections are dropped."
+msgstr "Полный перезапуск: останавливает и запускает ядро Mihomo, перестраивает правила файрвола и обновляет IP подписок. Активные соединения будут разорваны."
+
+msgid "Service is not running — config reload requires a running Mihomo instance. Use \"Save & Restart core\" instead."
+msgstr "Служба не запущена — для перезагрузки конфига нужен работающий Mihomo. Используйте «Сохранить и перезапустить ядро»."
+
+msgid "Config reload failed (%s, HTTP %s). %s Try \"Save & Restart core\" for a full restart."
+msgstr "Перезагрузка конфига не удалась (%s, HTTP %s). %s Попробуйте «Сохранить и перезапустить ядро» для полного перезапуска."
+
+msgid "(Hint: the system curl has no HTTPS support. Install curl-ssl, or use plain external-controller for hot reload.)"
+msgstr "(Подсказка: системный curl не поддерживает HTTPS. Установите пакет curl-ssl или используйте обычный external-controller для перезагрузки конфига.)"
+
+msgid "Config reloaded, but updating subscription IP cache failed: %s"
+msgstr "Конфиг перезагружен, но обновление кеша IP подписок не удалось: %s"
+
+msgid "Config reloaded via Mihomo API — active connections preserved."
+msgstr "Конфиг перезагружен через API Mihomo — активные соединения сохранены."
+
+msgid "Config reload error: %s. Try \"Save & Restart core\" for a full restart."
+msgstr "Ошибка перезагрузки конфига: %s. Попробуйте «Сохранить и перезапустить ядро» для полного перезапуска."
+
 ### Модуль log.js ###
 
 msgid "--- Log truncated, skipped %d older lines ---"
@@ -128,6 +160,12 @@ msgstr "Создать новый список"
 
 msgid "Here you can manage local lists for use in rule-providers."
 msgstr "Здесь вы можете управлять локальными списками для использования в rule-providers."
+
+msgid "No local lists yet. Click \"Create New List\" to add one."
+msgstr "Пока нет локальных списков. Нажмите «Создать новый список», чтобы добавить."
+
+msgid "%d entries"
+msgstr "записей: %d"
 
 msgid "Example usage in your config.yaml:"
 msgstr "Пример использования в вашем config.yaml:"
@@ -180,11 +218,11 @@ msgstr "Список с таким именем уже существует."
 msgid "TECHNICAL"
 msgstr "ТЕХНИЧЕСКИЙ"
 
-msgid "IP-CIDR List (fake-ip whitelist mode)"
-msgstr "Список IP-CIDR (режим fake-ip whitelist)"
+msgid "IP-CIDR List (fake-ip whitelist/rule mode)"
+msgstr "Список IP-CIDR (режим fake-ip whitelist/rule)"
 
-msgid "This list is used by the firewall (nftables/iptables) to mark traffic to specified IPs and subnets for proxying in fake-ip whitelist mode. Enter one IPv4 address or CIDR per line (e.g. 8.8.8.8 or 1.2.3.0/24). Lines starting with # are treated as comments. Saving applies changes immediately without restarting Mihomo."
-msgstr "Этот список используется файрволом (nftables/iptables) для маркировки трафика к указанным IP и подсетям для проксирования в режиме fake-ip whitelist. Вводите по одному IPv4-адресу или CIDR на строку (например, 8.8.8.8 или 1.2.3.0/24). Строки, начинающиеся с #, считаются комментариями. Сохранение применяет изменения немедленно без перезапуска Mihomo."
+msgid "This list is used by the firewall (nftables/iptables) to mark traffic to specified IPs and subnets for proxying when fake-ip-filter-mode is set to \"whitelist\" or \"rule\" (both modes leave part of the traffic on real IPs, which still needs to be proxied). Enter one IPv4 address or CIDR per line (e.g. 8.8.8.8 or 1.2.3.0/24). Lines starting with # are treated as comments. Saving applies changes immediately without restarting Mihomo."
+msgstr "Этот список используется файрволом (nftables/iptables) для маркировки трафика к указанным IP и подсетям для проксирования, когда fake-ip-filter-mode установлен в \"whitelist\" или \"rule\" (оба режима оставляют часть трафика на реальных IP, который всё равно нужно проксировать). Вводите по одному IPv4-адресу или CIDR на строку (например, 8.8.8.8 или 1.2.3.0/24). Строки, начинающиеся с #, считаются комментариями. Сохранение применяет изменения немедленно без перезапуска Mihomo."
 
 msgid "IP-CIDR whitelist saved and firewall rules updated."
 msgstr "Белый список IP-CIDR сохранён, правила файрвола обновлены."
@@ -425,8 +463,20 @@ msgstr "Не удалось перезапустить службу Clash: %s"
 msgid "Downloading mihomo kernel..."
 msgstr "Загрузка ядра mihomo..."
 
-msgid "Mihomo kernel downloaded and installed successfully!"
-msgstr "Ядро Mihomo успешно загружено и установлено!"
+msgid "Mihomo kernel installed successfully. The service was stopped for a safe replacement — press \"Restart Service\" to activate the new kernel."
+msgstr "Ядро Mihomo успешно установлено. Служба была остановлена для безопасной замены — нажмите «Перезапустить службу», чтобы активировать новое ядро."
+
+msgid "Failed to install new binary: %s"
+msgstr "Не удалось установить новый исполняемый файл: %s"
+
+msgid "Failed to set executable permissions: %s"
+msgstr "Не удалось установить права на исполнение: %s"
+
+msgid "WARNING: Binary at %s is not executable after chmod (mode: %s). Check filesystem permissions, then manually run: chmod 0755 %s"
+msgstr "ВНИМАНИЕ: исполняемый файл %s не получил права на запуск после chmod (текущий режим: %s). Проверьте права файловой системы и выполните вручную: chmod 0755 %s"
+
+msgid "unknown"
+msgstr "неизвестно"
 
 msgid "Failed to download mihomo kernel: %s"
 msgstr "Не удалось загрузить ядро mihomo: %s"
@@ -443,11 +493,11 @@ msgstr "HTTP %d: %s"
 msgid "Latest release is a pre-release"
 msgstr "Последний релиз является предварительным"
 
-msgid "Download failed"
-msgstr "Загрузка не удалась"
+msgid "Download failed: %s"
+msgstr "Загрузка не удалась: %s"
 
-msgid "Extraction failed"
-msgstr "Распаковка не удалась"
+msgid "Extraction failed: %s"
+msgstr "Распаковка не удалась: %s"
 
 msgid "Failed to read /sys/class/net:"
 msgstr "Не удалось прочитать /sys/class/net:"
@@ -532,17 +582,38 @@ msgstr "Автоматически добавляет HWID-заголовки к
 msgid "User-Agent"
 msgstr "User-Agent"
 
-msgid "Application identifier sent in HTTP headers"
-msgstr "Идентификатор приложения в HTTP-заголовках"
-
 msgid "Device OS"
 msgstr "ОС устройства"
 
-msgid "Operating system name sent in headers"
-msgstr "Имя операционной системы в заголовках"
-
-msgid "Auto-generated values:"
-msgstr "Автоматически генерируемые значения:"
+msgid "Values sent in HTTP headers of proxy-provider requests (User-Agent / x-device-os)."
+msgstr "Значения, отправляемые в HTTP-заголовках запросов proxy-provider (User-Agent / x-device-os)."
 
 msgid "Adding HWID headers to configuration..."
 msgstr "Добавление HWID-заголовков в конфигурацию..."
+
+msgid "SSClash"
+msgstr "SSClash"
+
+msgid "Checking for updates..."
+msgstr "Проверка обновлений..."
+
+msgid "Up to date"
+msgstr "Актуальная версия"
+
+msgid "New version available: %s"
+msgstr "Доступна новая версия: %s"
+
+msgid "Update check failed"
+msgstr "Не удалось проверить обновления"
+
+msgid "Download"
+msgstr "Скачать"
+
+msgid "by"
+msgstr "автор:"
+
+msgid "Donate"
+msgstr "Поддержать"
+
+msgid "Support the author"
+msgstr "Поддержать автора"

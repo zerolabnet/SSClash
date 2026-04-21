@@ -165,6 +165,43 @@ async function initializeAceEditor(content) {
     });
 }
 
+// =============================================================================
+// SECTION: SSClash version / update footer helpers
+// =============================================================================
+
+// Keep in sync with luci-app-ssclash/Makefile PKG_VERSION
+const SSCLASH_VERSION = '4.0.0';
+
+const SSCLASH_REPO = 'zerolabnet/SSClash';
+const SSCLASH_RELEASES_URL = 'https://github.com/' + SSCLASH_REPO + '/releases';
+const SSCLASH_LATEST_API  = 'https://api.github.com/repos/' + SSCLASH_REPO + '/releases/latest';
+const SSCLASH_AUTHOR_URL  = 'https://zerolab.net';
+const SSCLASH_DONATE_URL  = 'https://zerolab.net/donate/';
+
+function parseSemver(s) {
+    const m = (s || '').match(/v?(\d+)\.(\d+)\.(\d+)/);
+    return m ? [+m[1], +m[2], +m[3]] : null;
+}
+
+function cmpSemver(a, b) {
+    const pa = parseSemver(a), pb = parseSemver(b);
+    if (!pa || !pb) return 0;
+    for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
+    return 0;
+}
+
+async function getLatestSSClashRelease() {
+    try {
+        const resp = await fetch(SSCLASH_LATEST_API);
+        if (!resp.ok) return null;
+        const d = await resp.json();
+        if (d.prerelease) return null;
+        return { version: d.tag_name, url: d.html_url || SSCLASH_RELEASES_URL };
+    } catch (_e) {
+        return null;
+    }
+}
+
 return view.extend({
     load: function() {
         return L.resolveDefault(fs.read('/opt/clash/config.yaml'), '');
@@ -172,44 +209,51 @@ return view.extend({
     render: async function(config) {
         const running = await getServiceStatus();
 
-        const saveAndApply = async function() {
-            if (startStopButton) startStopButton.disabled = true;
-            try {
-                const value = editor.getValue().trim() + '\n';
+        const writeAndTestConfig = async function() {
+            const value = editor.getValue().trim() + '\n';
 
-                await fs.write('/opt/clash/config.yaml', value);
-                ui.addNotification(null, E('p', _('Configuration saved successfully.')), 'info');
+            await fs.write('/opt/clash/config.yaml', value);
+            ui.addNotification(null, E('p', _('Configuration saved successfully.')), 'info');
 
-                const testResult = await fs.exec('/opt/clash/bin/clash', ['-d', '/opt/clash', '-t']);
-                if (testResult.code !== 0) {
-                    const rawDetail = (testResult.stderr || testResult.stdout || '').trim();
-                    let shortDetail = rawDetail;
+            const testResult = await fs.exec('/opt/clash/bin/clash', ['-d', '/opt/clash', '-t']);
+            if (testResult.code !== 0) {
+                const rawDetail = (testResult.stderr || testResult.stdout || '').trim();
+                let shortDetail = rawDetail;
 
-                    if (rawDetail) {
-                        const lines = rawDetail.split('\n');
-                        let found = false;
-                        for (const line of lines) {
-                            const msgMatch = line.match(/msg="([^"]+)"/);
-                            if (msgMatch) {
-                                shortDetail = msgMatch[1].trim();
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            const nonEmpty = lines.filter(l => l.trim().length > 0);
-                            if (nonEmpty.length > 0) {
-                                shortDetail = nonEmpty[nonEmpty.length - 1].trim();
-                            }
+                if (rawDetail) {
+                    const lines = rawDetail.split('\n');
+                    let found = false;
+                    for (const line of lines) {
+                        const msgMatch = line.match(/msg="([^"]+)"/);
+                        if (msgMatch) {
+                            shortDetail = msgMatch[1].trim();
+                            found = true;
+                            break;
                         }
                     }
-
-                    ui.addNotification(null, E('p',
-                        _('Configuration test failed — service not reloaded. Please fix the errors below: %s')
-                        .format(shortDetail || _('unknown error'))
-                    ), 'error');
-                    return;
+                    if (!found) {
+                        const nonEmpty = lines.filter(l => l.trim().length > 0);
+                        if (nonEmpty.length > 0) {
+                            shortDetail = nonEmpty[nonEmpty.length - 1].trim();
+                        }
+                    }
                 }
+
+                ui.addNotification(null, E('p',
+                    _('Configuration test failed — service not reloaded. Please fix the errors below: %s')
+                    .format(shortDetail || _('unknown error'))
+                ), 'error');
+                return null;
+            }
+
+            return value;
+        };
+
+        const saveAndRestartCore = async function() {
+            if (startStopButton) startStopButton.disabled = true;
+            try {
+                const value = await writeAndTestConfig();
+                if (value === null) return;
 
                 await fs.exec('/etc/init.d/clash', ['reload']);
                 ui.addNotification(null, E('p', _('Service reloaded successfully.')), 'info');
@@ -222,6 +266,151 @@ return view.extend({
                 if (startStopButton) startStopButton.disabled = false;
             }
         };
+
+        const saveAndReloadConfig = async function() {
+            if (startStopButton) startStopButton.disabled = true;
+            try {
+                if (!(await getServiceStatus())) {
+                    ui.addNotification(null, E('p',
+                        _('Service is not running — config reload requires a running Mihomo instance. Use "Save & Restart core" instead.')
+                    ), 'warning');
+                    return;
+                }
+
+                const value = await writeAndTestConfig();
+                if (value === null) return;
+
+                const ec = parseYamlValue(value, 'external-controller');
+                const ecTls = parseYamlValue(value, 'external-controller-tls');
+                const secret = parseYamlValue(value, 'secret') || '';
+                const useTls = !!ecTls;
+
+                const { host, port } = normalizeHostPortFromAddr(
+                    useTls ? ecTls : ec,
+                    '127.0.0.1',
+                    useTls ? '9443' : '9090'
+                );
+                const scheme = useTls ? 'https' : 'http';
+
+                const curlArgs = [
+                    '-sS', '-o', '/dev/null', '-w', '%{http_code}',
+                    '-X', 'PUT',
+                    '-H', 'Content-Type: application/json',
+                    '-H', 'Authorization: Bearer ' + secret,
+                    '--data', '{"path":"","payload":""}',
+                    '--connect-timeout', '5',
+                    '--max-time', '15'
+                ];
+                if (useTls) {
+                    curlArgs.push('-k');
+                }
+                curlArgs.push(scheme + '://' + host + ':' + port + '/configs?force=true');
+
+                const res = await fs.exec('curl', curlArgs);
+                const httpCode = (res.stdout || '').trim();
+
+                if (res.code !== 0 || (httpCode !== '204' && httpCode !== '200')) {
+                    let detail = (res.stderr || '').trim();
+                    if (useTls && /Protocol\s+"?https"?\s+not\s+supported/i.test(detail)) {
+                        detail += ' ' + _('(Hint: the system curl has no HTTPS support. Install curl-ssl, or use plain external-controller for hot reload.)');
+                    }
+                    ui.addNotification(null, E('p',
+                        _('Config reload failed (%s, HTTP %s). %s Try "Save & Restart core" for a full restart.')
+                        .format(scheme, httpCode || 'n/a', detail ? detail : '')
+                    ), 'error');
+                    return;
+                }
+
+                fs.exec('/opt/clash/bin/clash-rules', ['update']).catch(function(err) {
+                    ui.addNotification(null, E('p',
+                        _('Config reloaded, but updating subscription IP cache failed: %s').format((err && err.message) || String(err))
+                    ), 'warning');
+                });
+
+                ui.addNotification(null, E('p',
+                    _('Config reloaded via Mihomo API — active connections preserved.')
+                ), 'info');
+
+                await pollStatus(true);
+            } catch(e) {
+                ui.addNotification(null, E('p',
+                    _('Config reload error: %s. Try "Save & Restart core" for a full restart.').format(e.message)
+                ), 'error');
+            } finally {
+                if (startStopButton) startStopButton.disabled = false;
+            }
+        };
+
+        const splitMenu = E('div', {
+            'class': 'ssclash-split-menu',
+            'style': 'position: absolute; top: 100%; right: 0; display: none; min-width: 220px; margin-top: 3px; background: #fff; color: #333; border: 1px solid rgba(0,0,0,0.2); border-radius: 3px; box-shadow: 0 3px 8px rgba(0,0,0,0.2); z-index: 1000;'
+        }, [
+            E('button', {
+                'class': 'btn',
+                'click': function() { splitMenu.style.display = 'none'; saveAndRestartCore(); },
+                'style': 'display: block; width: 100%; text-align: left; margin: 0; border: 0; border-radius: 0; background: transparent; padding: 8px 14px;',
+                'title': _('Full restart: stops and starts the Mihomo core, rebuilds firewall rules and refreshes subscription IPs. Active connections are dropped.')
+            }, _('Save & Restart core'))
+        ]);
+
+        const splitContainer = E('div', {
+            'class': 'ssclash-split-btn',
+            'style': 'display: inline-flex; align-items: stretch; position: relative;'
+        }, [
+            E('button', {
+                'class': 'btn',
+                'click': saveAndReloadConfig,
+                'style': 'margin: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0;',
+                'title': _('Reload configuration via Mihomo API — active connections are preserved. Firewall rules are NOT rebuilt; use "Save & Restart core" when changing external-controller / tproxy-port / tun / fake-ip-filter-mode / proxy mode.')
+            }, _('Save & Reload config')),
+            E('button', {
+                'class': 'btn',
+                'style': 'margin: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; padding-left: 10px; padding-right: 10px;',
+                'aria-haspopup': 'true',
+                'aria-label': _('More actions'),
+                'click': function(ev) {
+                    ev.stopPropagation();
+                    splitMenu.style.display = (splitMenu.style.display === 'block') ? 'none' : 'block';
+                }
+            }, '\u25BE'),
+            splitMenu
+        ]);
+
+        document.addEventListener('click', function(ev) {
+            if (!splitContainer.contains(ev.target)) splitMenu.style.display = 'none';
+        });
+
+        const dot = function() {
+            return E('span', { 'style': 'margin: 0 8px; opacity: 0.45;' }, '\u00B7');
+        };
+
+        const versionFooter = E('div', {
+            'id': 'ssclash-version-footer',
+            'style': 'margin-top: 20px; padding: 12px 0 12px 0; border-top: 1px solid rgba(127,127,127,0.2); text-align: center; font-size: 11.5px; line-height: 1.7; color: #888;'
+        }, [
+            E('div', {}, [
+                E('span', {
+                    'id': 'ssclash-version-label',
+                    'style': 'font-weight: 600; color: inherit;'
+                }, _('SSClash') + ' v' + SSCLASH_VERSION),
+                dot(),
+                E('span', {}, [
+                    _('by') + ' ',
+                    E('a', { 'href': SSCLASH_AUTHOR_URL, 'target': '_blank', 'rel': 'noopener' }, 'ZeroChaos')
+                ]),
+                dot(),
+                E('a', {
+                    'href': SSCLASH_DONATE_URL,
+                    'target': '_blank',
+                    'rel': 'noopener',
+                    'title': _('Support the author')
+                }, _('Donate'))
+            ]),
+            E('div', {
+                'id': 'ssclash-update-status',
+                'style': 'margin-top: 2px; opacity: 0.85;'
+            }, _('Checking for updates...'))
+        ]);
 
         const view = E([
             E('div', {
@@ -251,14 +440,41 @@ return view.extend({
                 'style': 'width: 100%; height: 640px; margin-bottom: 15px;'
             }),
             E('div', { 'style': 'text-align: center; margin-top: 15px; margin-bottom: 20px;' }, [
-                E('button', {
-                    'class': 'btn',
-                    'click': saveAndApply
-                }, _('Save & Apply Configuration'))
-            ])
+                splitContainer
+            ]),
+            versionFooter
         ]);
 
         initializeAceEditor(config);
+
+        (async function updateVersionFooter() {
+            const status = view.querySelector('#ssclash-update-status');
+            if (!status) return;
+
+            const latest = await getLatestSSClashRelease();
+            if (!latest) {
+                status.textContent = _('Update check failed');
+                return;
+            }
+
+            if (cmpSemver(latest.version, SSCLASH_VERSION) > 0) {
+                status.textContent = '';
+                status.appendChild(document.createTextNode(
+                    _('New version available: %s').format(latest.version) + ' '
+                ));
+                status.appendChild(E('a', {
+                    'href': latest.url,
+                    'target': '_blank',
+                    'rel': 'noopener',
+                    'style': 'font-weight: bold;'
+                }, _('Download')));
+                status.style.color = '#b58900';
+                status.style.opacity = '1';
+            } else {
+                status.textContent = _('Up to date');
+            }
+        })();
+
         return view;
     },
     handleSave: null,

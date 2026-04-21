@@ -161,7 +161,7 @@ async function detectFakeIpWhitelistMode() {
             if (modeMatch) filterMode = modeMatch[1].toLowerCase().replace(/['"]/g, '');
         }
 
-        return dnsEnabled && isEnhancedFakeIp && filterMode === 'whitelist';
+        return dnsEnabled && isEnhancedFakeIp && (filterMode === 'whitelist' || filterMode === 'rule');
     } catch (e) {
         console.error('Failed to detect fake-ip-filter-mode:', e);
         return false;
@@ -236,22 +236,30 @@ return view.extend({
         const sections = rulesets.map(ruleset => {
             const filename = ruleset.name;
 
+            const entryCount = (ruleset.content || '').split('\n')
+                .filter(l => l.trim() && !l.trim().startsWith('#')).length;
+
             const header = E('h3', {
                 'class': 'cbi-section-title',
-                'style': 'cursor: pointer;',
+                'style': 'cursor: pointer; display: flex; align-items: center; gap: 10px;',
                 'click': (e) => {
-                    const contentDiv = e.target.nextElementSibling;
+                    const contentDiv = e.currentTarget.nextElementSibling;
                     const isActive = contentDiv.style.display === 'block';
-                    e.target.classList.toggle('active', !isActive);
+                    e.currentTarget.classList.toggle('active', !isActive);
                     contentDiv.style.display = isActive ? 'none' : 'block';
                     if (!editors[filename] && !isActive) {
                         initializeAceEditor(filename, ruleset.content);
                     }
                 }
-            }, `./lst/${filename}`);
+            }, [
+                E('span', {}, `./lst/${filename}`),
+                E('span', {
+                    'style': 'margin-left: auto; font-size: 11px; font-weight: normal; color: #666; background: rgba(127,127,127,0.12); padding: 2px 8px; border-radius: 10px; white-space: nowrap;'
+                }, _('%d entries').format(entryCount))
+            ]);
 
             const saveButton = E('button', { 'class': 'btn', 'click': () => handleSave(filename) }, _('Save'));
-            const deleteButton = E('button', { 'class': 'btn', 'style': 'margin-left: 10px;', 'click': () => handleDelete(filename) }, _('Delete'));
+            const deleteButton = E('button', { 'class': 'btn cbi-button-remove', 'style': 'margin-left: 10px;', 'click': () => handleDelete(filename) }, _('Delete'));
 
             const content = E('div', {
                 'class': 'cbi-section-node',
@@ -284,10 +292,10 @@ return view.extend({
                         'style': 'display: inline-block; background: #0066cc; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; margin-right: 10px; white-space: nowrap;'
                     }, _('TECHNICAL')),
                     E('h3', { 'style': 'margin: 0; color: #0066cc;' },
-                        _('IP-CIDR List (fake-ip whitelist mode)'))
+                        _('IP-CIDR List (fake-ip whitelist/rule mode)'))
                 ]),
                 E('p', { 'class': 'cbi-section-descr', 'style': 'margin-bottom: 10px;' },
-                    _('This list is used by the firewall (nftables/iptables) to mark traffic to specified IPs and subnets for proxying in fake-ip whitelist mode. Enter one IPv4 address or CIDR per line (e.g. 8.8.8.8 or 1.2.3.0/24). Lines starting with # are treated as comments. Saving applies changes immediately without restarting Mihomo.')
+                    _('This list is used by the firewall (nftables/iptables) to mark traffic to specified IPs and subnets for proxying when fake-ip-filter-mode is set to "whitelist" or "rule" (both modes leave part of the traffic on real IPs, which still needs to be proxied). Enter one IPv4 address or CIDR per line (e.g. 8.8.8.8 or 1.2.3.0/24). Lines starting with # are treated as comments. Saving applies changes immediately without restarting Mihomo.')
                 ),
                 E('div', { 'id': editorId, 'style': 'min-height: 150px; height: 350px; margin-bottom: 10px; border-radius: 4px;' }),
                 E('div', { 'style': 'text-align: center;' }, [
@@ -300,6 +308,13 @@ return view.extend({
             setTimeout(() => {
                 initializeAceEditor(FAKEIP_WHITELIST_FILENAME, whitelistContent || '');
             }, 100);
+        }
+
+        const emptyStateSections = [];
+        if (sections.length === 0) {
+            emptyStateSections.push(E('div', {
+                'style': 'padding: 24px 16px; border: 1px dashed rgba(127,127,127,0.5); border-radius: 5px; text-align: center; color: #666; margin: 15px 0; font-size: 13px;'
+            }, _('No local lists yet. Click "Create New List" to add one.')));
         }
 
         return E('div', {}, [
@@ -322,11 +337,12 @@ return view.extend({
                     E('div', { 'style': 'margin-bottom: 4px; font-weight: bold;' },
                         _('Example usage in your config.yaml:')),
                     E('pre', {
-                        'style': 'margin: 0; font-family: monospace; background: #f7f7f7; padding: 8px 10px; border-radius: 4px; border: 1px solid #e0e0e0; white-space: pre;'
+                        'style': 'margin: 0; font-family: monospace; background: rgba(127,127,127,0.12); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(127,127,127,0.25); white-space: pre;'
                     }, 'rule-providers:\n  your-list-name:\n    behavior: classical\n    type: file\n    format: text\n    path: ./lst/your-list-name.txt')
                 ])
             ]),
             ...whitelistSections,
+            ...emptyStateSections,
             ...sections
         ]);
     },
