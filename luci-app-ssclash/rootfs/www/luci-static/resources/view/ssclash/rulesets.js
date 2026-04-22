@@ -188,8 +188,39 @@ async function handleSaveFakeIpWhitelist() {
             const errMsg = (result && (result.stderr || result.stdout || '').trim()) || _('unknown error');
             ui.addNotification(null, E('p', _('IP-CIDR whitelist saved, but firewall update failed: %s').format(errMsg)), 'warning');
         }
+
+        try {
+            const refreshed = await L.resolveDefault(fs.read(`${rulesetPath}${FAKEIP_WHITELIST_FILENAME}`), '');
+            editor.setValue(refreshed || '', -1);
+        } catch (_e) { /* non-fatal */ }
     } catch (e) {
         ui.addNotification(null, E('p', _('Failed to save IP-CIDR whitelist: %s').format(e.message)), 'error');
+    } finally {
+        ui.hideModal();
+    }
+}
+
+async function handleRegenerateFakeIpWhitelist() {
+    const editor = editors[FAKEIP_WHITELIST_FILENAME];
+    ui.showModal(_('Regenerating...'), [ E('p', { 'class': 'spinning' }, _('Please wait')) ]);
+
+    try {
+        const result = await fs.exec('/opt/clash/bin/clash-rules', ['update-ip-whitelist']);
+        if (result && result.code === 0) {
+            ui.addNotification(null, E('p', _('IP-CIDR whitelist regenerated from rule-providers.')), 'success');
+        } else {
+            const errMsg = (result && (result.stderr || result.stdout || '').trim()) || _('unknown error');
+            ui.addNotification(null, E('p', _('Regeneration failed: %s').format(errMsg)), 'warning');
+        }
+
+        if (editor) {
+            try {
+                const refreshed = await L.resolveDefault(fs.read(`${rulesetPath}${FAKEIP_WHITELIST_FILENAME}`), '');
+                editor.setValue(refreshed || '', -1);
+            } catch (_e) { /* non-fatal */ }
+        }
+    } catch (e) {
+        ui.addNotification(null, E('p', _('Failed to regenerate IP-CIDR whitelist: %s').format(e.message)), 'error');
     } finally {
         ui.hideModal();
     }
@@ -297,9 +328,17 @@ return view.extend({
                 E('p', { 'class': 'cbi-section-descr', 'style': 'margin-bottom: 10px;' },
                     _('This list is used by the firewall (nftables/iptables) to mark traffic to specified IPs and subnets for proxying when fake-ip-filter-mode is set to "whitelist" or "rule" (both modes leave part of the traffic on real IPs, which still needs to be proxied). Enter one IPv4 address or CIDR per line (e.g. 8.8.8.8 or 1.2.3.0/24). Lines starting with # are treated as comments. Saving applies changes immediately without restarting Mihomo.')
                 ),
+                E('p', { 'class': 'cbi-section-descr', 'style': 'margin-bottom: 10px;' },
+                    _('The block between # AUTO-BEGIN and # AUTO-END is generated automatically from IP-CIDR entries found in rule-providers referenced by non-DIRECT rules. In fake-ip-filter-mode: whitelist, dns.fake-ip-filter: RULE-SET:<name> entries (colon syntax) are merged as well. In fake-ip-filter-mode: rule, dns.fake-ip-filter: entries of the form RULE-SET,<name>,fake-ip are merged (Mihomo routing-style syntax for that mode; real-ip rows are ignored). It is refreshed on service start, on every clash-rules update (cron, every 30 min) and on "Save" / "Regenerate now". Edit only the area OUTSIDE the markers — everything inside will be overwritten. Set AUTO_FAKEIP_WHITELIST=false in /opt/clash/settings to disable auto-generation and manage the list by hand.')
+                ),
                 E('div', { 'id': editorId, 'style': 'min-height: 150px; height: 350px; margin-bottom: 10px; border-radius: 4px;' }),
                 E('div', { 'style': 'text-align: center;' }, [
-                    E('button', { 'class': 'btn', 'click': handleSaveFakeIpWhitelist }, _('Save'))
+                    E('button', { 'class': 'btn', 'click': handleSaveFakeIpWhitelist }, _('Save')),
+                    E('button', {
+                        'class': 'btn',
+                        'style': 'margin-left: 10px;',
+                        'click': handleRegenerateFakeIpWhitelist
+                    }, _('Regenerate now'))
                 ])
             ]);
 

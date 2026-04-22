@@ -170,7 +170,7 @@ async function initializeAceEditor(content) {
 // =============================================================================
 
 // Keep in sync with luci-app-ssclash/Makefile PKG_VERSION
-const SSCLASH_VERSION = '4.0.0';
+const SSCLASH_VERSION = '4.1.0';
 
 const SSCLASH_REPO = 'zerolabnet/SSClash';
 const SSCLASH_RELEASES_URL = 'https://github.com/' + SSCLASH_REPO + '/releases';
@@ -380,36 +380,22 @@ return view.extend({
             if (!splitContainer.contains(ev.target)) splitMenu.style.display = 'none';
         });
 
-        const dot = function() {
-            return E('span', { 'style': 'margin: 0 8px; opacity: 0.45;' }, '\u00B7');
-        };
+        const dot = () => E('span', { 'style': 'margin: 0 6px; opacity: 0.35;' }, '\u00B7');
 
         const versionFooter = E('div', {
             'id': 'ssclash-version-footer',
-            'style': 'margin-top: 20px; padding: 12px 0 12px 0; border-top: 1px solid rgba(127,127,127,0.2); text-align: center; font-size: 11.5px; line-height: 1.7; color: #888;'
+            'style': 'margin-top: 20px; padding: 10px 0; border-top: 1px solid rgba(127,127,127,0.15); text-align: center; font-size: 11px; color: #999;'
         }, [
-            E('div', {}, [
-                E('span', {
-                    'id': 'ssclash-version-label',
-                    'style': 'font-weight: 600; color: inherit;'
-                }, _('SSClash') + ' v' + SSCLASH_VERSION),
-                dot(),
-                E('span', {}, [
-                    _('by') + ' ',
-                    E('a', { 'href': SSCLASH_AUTHOR_URL, 'target': '_blank', 'rel': 'noopener' }, 'ZeroChaos')
-                ]),
-                dot(),
-                E('a', {
-                    'href': SSCLASH_DONATE_URL,
-                    'target': '_blank',
-                    'rel': 'noopener',
-                    'title': _('Support the author')
-                }, _('Donate'))
+            E('span', {}, 'SSClash v' + SSCLASH_VERSION),
+            dot(),
+            E('span', {}, [
+                'by ',
+                E('a', { 'href': SSCLASH_AUTHOR_URL, 'target': '_blank', 'rel': 'noopener' }, 'ZeroChaos')
             ]),
-            E('div', {
-                'id': 'ssclash-update-status',
-                'style': 'margin-top: 2px; opacity: 0.85;'
-            }, _('Checking for updates...'))
+            dot(),
+            E('a', { 'href': SSCLASH_DONATE_URL, 'target': '_blank', 'rel': 'noopener' }, _('Donate')),
+            dot(),
+            E('span', { 'id': 'ssclash-update-status' }, '\u2026')
         ]);
 
         const view = E([
@@ -453,25 +439,19 @@ return view.extend({
 
             const latest = await getLatestSSClashRelease();
             if (!latest) {
-                status.textContent = _('Update check failed');
+                status.textContent = _('update check failed');
                 return;
             }
 
             if (cmpSemver(latest.version, SSCLASH_VERSION) > 0) {
                 status.textContent = '';
-                status.appendChild(document.createTextNode(
-                    _('New version available: %s').format(latest.version) + ' '
-                ));
                 status.appendChild(E('a', {
                     'href': latest.url,
                     'target': '_blank',
-                    'rel': 'noopener',
-                    'style': 'font-weight: bold;'
-                }, _('Download')));
-                status.style.color = '#b58900';
-                status.style.opacity = '1';
+                    'rel': 'noopener'
+                }, latest.version + ' \u2191'));
             } else {
-                status.textContent = _('Up to date');
+                status.textContent = '\u2713';
             }
         })();
 

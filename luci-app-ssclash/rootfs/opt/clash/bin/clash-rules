@@ -18,6 +18,8 @@ readonly RESERVED_NETWORKS="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.2
 # Fake-ip whitelist IP-CIDR technical list (used only by the firewall, not by config.yaml)
 readonly FAKEIP_WHITELIST_FILE="/opt/clash/lst/fakeip-whitelist-ipcidr.txt"
 readonly FAKEIP_IPSET_NAME="clash_fakeip_whitelist"
+# RAM-only: last CIDR list digest applied to nft/ipset (skip kernel churn when unchanged).
+readonly FAKEIP_WHITELIST_DIGEST_FILE="/tmp/clash/fakeip_whitelist_applied.digest"
 
 # Global Settings Variables
 # These are populated by load_all_settings_once() to avoid repeated file reads.
@@ -34,6 +36,14 @@ EXCLUDED_INTERFACES=""
 # Populated in start() when fake-ip-filter-mode: whitelist or rule is detected
 FAKE_IP_FILTER_MODE="blacklist"
 FAKEIP_WHITELIST_IPS=""
+# Auto-generate the fakeip whitelist IP-CIDR list from IP-CIDR entries found in
+# rule-providers that are referenced by rules with a non-DIRECT action. Set to
+# "false" in /opt/clash/settings to disable and manage the file entirely by hand.
+AUTO_FAKEIP_WHITELIST="true"
+# Markers delimit the auto-generated block inside the fakeip whitelist file.
+# Everything outside the markers is preserved on each refresh.
+readonly FAKEIP_AUTO_BEGIN="# AUTO-BEGIN: generated from rule-providers — do not edit between markers"
+readonly FAKEIP_AUTO_END="# AUTO-END"
 
 # Helper: returns 0 if the current fake-ip-filter-mode is one of the modes that
 # leaves part of the traffic on real IPs (whitelist or rule). In both cases
@@ -91,6 +101,7 @@ load_all_settings_once() {
             "DETECTED_WAN") DETECTED_WAN="$value" ;;
             "INCLUDED_INTERFACES") INCLUDED_INTERFACES="$value" ;;
             "EXCLUDED_INTERFACES") EXCLUDED_INTERFACES="$value" ;;
+            "AUTO_FAKEIP_WHITELIST") AUTO_FAKEIP_WHITELIST="$value" ;;
         esac
     done < "$SETTINGS_FILE"
 
@@ -565,6 +576,358 @@ extract_fake_ip_config() {
         }
     }
     ' "$CONFIG_FILE"
+}
+
+# =============================================================================
+# SECTION: Rule-providers — parsing and IP-CIDR auto-extraction
+# =============================================================================
+
+# Parse the rule-providers: section of config.yaml.
+# Output one line per provider: "name|behavior|type|path"
+# behavior is one of: classical, ipcidr, domain (defaults to classical if absent).
+# type     is one of: http, file.
+# path may be relative (./…) or absolute — consumers must resolve it.
+extract_rule_providers() {
+    [ -f "$CONFIG_FILE" ] || return 1
+
+    awk '
+    function flush() {
+        if (name != "") {
+            if (behavior == "") behavior = "classical"
+            if (type == "") type = "http"
+            print name "|" behavior "|" type "|" path
+        }
+        name = ""; behavior = ""; type = ""; path = ""
+    }
+    /^rule-providers:/ { in_rp = 1; next }
+    # Leaving the rule-providers block: any non-indented top-level key.
+    /^[a-zA-Z][^[:space:]]*:/ && !/^[[:space:]]/ {
+        if (in_rp) { flush(); in_rp = 0 }
+    }
+    in_rp {
+        # Provider name: a line like "  my-provider:" with nothing after the colon.
+        if (match($0, /^[[:space:]]+[^[:space:]#].*:[[:space:]]*(#.*)?$/)) {
+            flush()
+            line = $0
+            sub(/#.*/, "", line)
+            gsub(/^[[:space:]]*/, "", line)
+            sub(/:[[:space:]]*$/, "", line)
+            name = line
+            next
+        }
+        # Key: value lines inside a provider block.
+        if (match($0, /^[[:space:]]+(behavior|type|path):[[:space:]]*/)) {
+            key = $0
+            gsub(/^[[:space:]]+/, "", key)
+            sub(/:.*/, "", key)
+            val = $0
+            sub(/^[[:space:]]+[a-zA-Z]+:[[:space:]]*/, "", val)
+            sub(/[[:space:]]*#.*/, "", val)
+            sub(/[[:space:]]+$/, "", val)
+            gsub(/^["'"'"']|["'"'"']$/, "", val)
+            if (key == "behavior") behavior = val
+            else if (key == "type")     type = val
+            else if (key == "path")     path = val
+        }
+    }
+    END { flush() }
+    ' "$CONFIG_FILE"
+}
+
+# Parse the rules: section and return the names of rule-sets that are referenced
+# by at least one rule whose action is NOT DIRECT/REJECT/REJECT-DROP/PASS.
+# These are the rule-sets whose IP-CIDR entries should be proxied, and therefore
+# the ones we want in the firewall fakeip whitelist.
+extract_proxy_rule_set_names() {
+    [ -f "$CONFIG_FILE" ] || return 1
+
+    awk '
+    /^rules:/ { in_rules = 1; next }
+    /^[a-zA-Z][^[:space:]]*:/ && !/^[[:space:]]/ { in_rules = 0 }
+    in_rules {
+        line = $0
+        sub(/#.*/, "", line)
+        gsub(/^[[:space:]]*/, "", line)
+        gsub(/[[:space:]]+$/, "", line)
+        if (line !~ /^-[[:space:]]*RULE-SET,/) next
+        sub(/^-[[:space:]]*RULE-SET,/, "", line)
+        # line is now "<name>,<action>[,<options>...]"
+        n = split(line, parts, ",")
+        if (n < 2) next
+        name = parts[1]
+        action = toupper(parts[2])
+        if (action == "DIRECT" || action == "REJECT" || action == "REJECT-DROP" || action == "PASS") next
+        if (name == "") next
+        print name
+    }
+    ' "$CONFIG_FILE" | sort -u
+}
+
+# Parse the dns.fake-ip-filter: list and return the names of rule-sets referenced
+# via "- RULE-SET:<name>" entries (Mihomo fake-ip-filter-mode: whitelist syntax).
+# Note the separator is a colon, unlike the comma used in top-level rules:.
+# Plain domain entries (e.g. "- +.lan") are ignored.
+extract_fake_ip_filter_rule_sets() {
+    [ -f "$CONFIG_FILE" ] || return 1
+
+    awk '
+    function indent_of(s,    i) {
+        for (i = 1; i <= length(s); i++) {
+            if (substr(s, i, 1) != " ") return i - 1
+        }
+        return length(s)
+    }
+    /^dns:/ { in_dns = 1; in_filter = 0; next }
+    /^[a-zA-Z][^[:space:]]*:/ && !/^[[:space:]]/ {
+        in_dns = 0; in_filter = 0
+    }
+    in_dns {
+        # Enter the fake-ip-filter: sub-block.
+        if ($0 ~ /^[[:space:]]+fake-ip-filter:[[:space:]]*(#.*)?$/) {
+            in_filter = 1
+            filter_indent = indent_of($0)
+            next
+        }
+        if (in_filter) {
+            # Blank / comment-only lines do not close the block.
+            stripped = $0
+            sub(/#.*/, "", stripped)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", stripped)
+            if (stripped == "") next
+
+            # Any key at the same or lower indentation ends the block.
+            this_indent = indent_of($0)
+            if ($0 ~ /^[[:space:]]+[^-[:space:]#][^:]*:[[:space:]]*(#.*)?$/ && this_indent <= filter_indent) {
+                in_filter = 0
+                # Still evaluate the line in case it opens a new section (handled above).
+            } else if (substr(stripped, 1, 1) == "-") {
+                val = stripped
+                sub(/^-[[:space:]]*/, "", val)
+                # We only want list items of the form RULE-SET:<name> (strip quotes).
+                gsub(/^["'"'"']|["'"'"']$/, "", val)
+                if (toupper(substr(val, 1, 9)) == "RULE-SET:") {
+                    name = substr(val, 10)
+                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+                    gsub(/^["'"'"']|["'"'"']$/, "", name)
+                    if (name != "") print name
+                }
+            }
+        }
+    }
+    ' "$CONFIG_FILE" | sort -u
+}
+
+# Parse dns.fake-ip-filter: for Mihomo fake-ip-filter-mode: rule syntax — list
+# items like "- RULE-SET,<name>,fake-ip" (routing-style, comma-separated). Only
+# rows whose last field is "fake-ip" (case-insensitive) contribute a name;
+# "real-ip" and other outcomes are skipped. GEOSITE/DOMAIN/MATCH are ignored here.
+extract_fake_ip_filter_rule_sets_comma_fake_ip() {
+    [ -f "$CONFIG_FILE" ] || return 1
+
+    awk '
+    function indent_of(s,    i) {
+        for (i = 1; i <= length(s); i++) {
+            if (substr(s, i, 1) != " ") return i - 1
+        }
+        return length(s)
+    }
+    function trim(s) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+        return s
+    }
+    /^dns:/ { in_dns = 1; in_filter = 0; next }
+    /^[a-zA-Z][^[:space:]]*:/ && !/^[[:space:]]/ {
+        in_dns = 0; in_filter = 0
+    }
+    in_dns {
+        if ($0 ~ /^[[:space:]]+fake-ip-filter:[[:space:]]*(#.*)?$/) {
+            in_filter = 1
+            filter_indent = indent_of($0)
+            next
+        }
+        if (in_filter) {
+            stripped = $0
+            sub(/#.*/, "", stripped)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", stripped)
+            if (stripped == "") next
+
+            this_indent = indent_of($0)
+            if ($0 ~ /^[[:space:]]+[^-[:space:]#][^:]*:[[:space:]]*(#.*)?$/ && this_indent <= filter_indent) {
+                in_filter = 0
+            } else if (substr(stripped, 1, 1) == "-") {
+                val = stripped
+                sub(/^-[[:space:]]*/, "", val)
+                gsub(/^["'"'"']|["'"'"']$/, "", val)
+                if (val == "") next
+                # Must be RULE-SET,<name>,<fake-ip> — not RULE-SET:<name>
+                if (toupper(substr(val, 1, 9)) != "RULE-SET,") next
+                n = split(val, parts, ",")
+                if (n < 3) next
+                for (i = 1; i <= n; i++) parts[i] = trim(parts[i])
+                if (toupper(parts[1]) != "RULE-SET") next
+                if (tolower(parts[n]) != "fake-ip") next
+                name = parts[2]
+                if (name != "") print name
+            }
+        }
+    }
+    ' "$CONFIG_FILE" | sort -u
+}
+
+# Extract IPv4 CIDR entries from a single rule-provider file.
+# Arguments:
+#   $1 — absolute path to the provider file
+#   $2 — behavior: classical | ipcidr | domain
+# For classical files we keep only "IP-CIDR,<v4>[,...]" rows (IP-CIDR6 and any
+# row containing ':' is skipped — IPv6 is not handled by the firewall today).
+# For ipcidr files we keep only IPv4 CIDR rows.
+# Comments (# …) and blank lines are ignored. Output is one CIDR per line.
+extract_ipv4_cidr_from_rule_provider_file() {
+    local file="$1"
+    local behavior="$2"
+
+    [ -f "$file" ] || return 0
+
+    case "$behavior" in
+        classical)
+            awk '
+            {
+                line = $0
+                gsub(/\r$/, "", line)
+                sub(/#.*/, "", line)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                if (line == "") next
+                # Strip the YAML list marker ("- ") so that "  - IP-CIDR,..."
+                # lines from classical rule-provider files are recognised.
+                sub(/^-[[:space:]]*/, "", line)
+                if (line == "") next
+                if (toupper(substr(line, 1, 8)) != "IP-CIDR,") next
+                rest = substr(line, 9)
+                # Strip trailing options like ",no-resolve"
+                sub(/,.*$/, "", rest)
+                gsub(/[[:space:]]+/, "", rest)
+                if (rest == "" || index(rest, ":") > 0) next
+                print rest
+            }' "$file"
+            ;;
+        ipcidr)
+            awk '
+            {
+                line = $0
+                gsub(/\r$/, "", line)
+                sub(/#.*/, "", line)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                if (line == "") next
+                # YAML-style ipcidr providers may also use "- <cidr>" list syntax.
+                sub(/^-[[:space:]]*/, "", line)
+                if (line == "") next
+                # ipcidr files are expected to contain one CIDR per line
+                sub(/[[:space:]].*$/, "", line)
+                if (index(line, ":") > 0) next
+                print line
+            }' "$file"
+            ;;
+        *)
+            # domain / mixed / unknown behaviors do not contribute IP-CIDRs
+            return 0
+            ;;
+    esac
+}
+
+# Produce the auto-generated IPv4 CIDR list for the fakeip whitelist.
+# Sources: non-DIRECT rules: in config.yaml, plus dns.fake-ip-filter: per
+# fake-ip-filter-mode (whitelist: RULE-SET:<name> only; rule: RULE-SET,<name>,fake-ip).
+# Output is de-duplicated and lexicographically sorted; each entry is validated
+# via is_valid_ipv4_cidr before being printed.
+# Sets the global AUTO_FAKEIP_SOURCES to a space-separated list of provider
+# names that actually contributed at least one entry (used for the header
+# comment inside the whitelist file).
+AUTO_FAKEIP_SOURCES=""
+generate_fakeip_whitelist_auto() {
+    AUTO_FAKEIP_SOURCES=""
+
+    local proxy_sets
+    proxy_sets=$(extract_proxy_rule_set_names)
+
+    # dns.fake-ip-filter: supplements rule-providers used for IP-CIDR extraction:
+    # - whitelist: Mihomo uses "- RULE-SET:<name>" in this list only.
+    # - rule: comma routing-style "- RULE-SET,<name>,fake-ip" / real-ip; only
+    #   fake-ip rows are merged (colon entries are not used in rule mode per docs).
+    local filter_colon filter_comma
+    if [ "$FAKE_IP_FILTER_MODE" = "whitelist" ]; then
+        filter_colon=$(extract_fake_ip_filter_rule_sets)
+        proxy_sets=$(printf '%s\n%s\n' "$proxy_sets" "$filter_colon" \
+            | grep -v '^$' | sort -u)
+    elif [ "$FAKE_IP_FILTER_MODE" = "rule" ]; then
+        filter_comma=$(extract_fake_ip_filter_rule_sets_comma_fake_ip)
+        proxy_sets=$(printf '%s\n%s\n' "$proxy_sets" "$filter_comma" \
+            | grep -v '^$' | sort -u)
+    fi
+
+    [ -z "$proxy_sets" ] && return 0
+
+    local providers
+    providers=$(extract_rule_providers)
+    [ -z "$providers" ] && return 0
+
+    local base_dir
+    base_dir=$(get_providers_base_dir)
+
+    local tmp_out
+    tmp_out="/tmp/clash/clash_autowl_raw.$$"
+    local tmp_sources
+    tmp_sources="/tmp/clash/clash_autowl_sources.$$"
+    mkdir -p /tmp/clash
+    : > "$tmp_out"
+    : > "$tmp_sources"
+
+    local set_name
+    echo "$proxy_sets" | while IFS= read -r set_name; do
+        [ -z "$set_name" ] && continue
+        local provider_line
+        provider_line=$(echo "$providers" | awk -F'|' -v n="$set_name" '$1 == n { print; exit }')
+        [ -z "$provider_line" ] && continue
+
+        local behavior type path full_path
+        behavior=$(echo "$provider_line" | awk -F'|' '{print $2}')
+        type=$(echo "$provider_line" | awk -F'|' '{print $3}')
+        path=$(echo "$provider_line" | awk -F'|' '{print $4}')
+
+        case "$path" in
+            ./*) full_path="$base_dir/${path#./}" ;;
+            /*)  full_path="$path" ;;
+            *)   full_path="$base_dir/$path" ;;
+        esac
+
+        if [ ! -f "$full_path" ]; then
+            msg "Auto fakeip whitelist: provider '$set_name' file not found: $full_path (skipped)"
+            continue
+        fi
+
+        local entries
+        entries=$(extract_ipv4_cidr_from_rule_provider_file "$full_path" "$behavior")
+        if [ -n "$entries" ]; then
+            echo "$entries" >> "$tmp_out"
+            echo "$set_name" >> "$tmp_sources"
+        fi
+    done
+
+    # Validate + dedupe + sort, printing to stdout
+    local line
+    if [ -s "$tmp_out" ]; then
+        sort -u "$tmp_out" | while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            if is_valid_ipv4_cidr "$line"; then
+                echo "$line"
+            fi
+        done
+    fi
+
+    if [ -s "$tmp_sources" ]; then
+        AUTO_FAKEIP_SOURCES=$(sort -u "$tmp_sources" | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+    fi
+
+    rm -f "$tmp_out" "$tmp_sources"
 }
 
 # Function to extract server IPs from config.yaml (with subscription support)
@@ -1559,6 +1922,11 @@ apply_iptables_rules() {
 update_rules() {
     msg "Intelligently updating subscription IPs..."
 
+    # Also refresh the auto-generated fakeip whitelist on this same cron cycle
+    # (runs every 30 minutes by default). update_fakeip_whitelist_sets is a
+    # no-op when the current fake-ip-filter-mode is neither whitelist nor rule.
+    update_fakeip_whitelist_sets
+
     local old_ips=""
     if [ -f "$SUBSCRIPTION_CACHE_FILE" ]; then
         old_ips=$(cat "$SUBSCRIPTION_CACHE_FILE")
@@ -1720,6 +2088,90 @@ teardown_routing_rules() {
 # SECTION: Fake-IP whitelist — ipset/nft set management for CIDR exclusions
 # =============================================================================
 
+# Rewrite the auto-generated block of $FAKEIP_WHITELIST_FILE in place.
+# Manual entries (anything outside the AUTO-BEGIN/AUTO-END markers) are kept
+# untouched. If the file does not yet contain markers, the auto block is
+# appended; if it is already present, its body is replaced.
+# Skipped entirely when AUTO_FAKEIP_WHITELIST is not "true" or when the current
+# fake-ip-filter-mode is neither whitelist nor rule.
+refresh_fakeip_whitelist_file() {
+    [ "$AUTO_FAKEIP_WHITELIST" = "true" ] || return 0
+    is_ipcidr_whitelist_mode || return 0
+
+    # Run generate_fakeip_whitelist_auto with stdout redirected — NOT via
+    # command substitution. The latter would fork a subshell and discard
+    # AUTO_FAKEIP_SOURCES, breaking the # Sources: header and log lines.
+    local auto_entries tmp_auto
+    tmp_auto="/tmp/clash/clash_autowl_stdout.$$"
+    mkdir -p /tmp/clash
+    : > "$tmp_auto"
+    generate_fakeip_whitelist_auto > "$tmp_auto"
+    auto_entries=$(cat "$tmp_auto" 2>/dev/null)
+    rm -f "$tmp_auto"
+
+    mkdir -p "$(dirname "$FAKEIP_WHITELIST_FILE")" 2>/dev/null
+
+    # Preserve manual content: everything outside the AUTO-BEGIN/AUTO-END markers.
+    local manual_content=""
+    if [ -f "$FAKEIP_WHITELIST_FILE" ]; then
+        manual_content=$(awk '
+            /^#[[:space:]]*AUTO-BEGIN/ { skip = 1; next }
+            /^#[[:space:]]*AUTO-END/   { skip = 0; next }
+            !skip { print }
+        ' "$FAKEIP_WHITELIST_FILE")
+        # Strip trailing blank lines for consistent formatting.
+        manual_content=$(printf '%s' "$manual_content" | awk 'NF {p=1} p' | sed -e :a -e '/^$/{$d;N;ba' -e '}')
+    fi
+
+    local count=0
+    if [ -n "$auto_entries" ]; then
+        count=$(echo "$auto_entries" | wc -l | xargs)
+    fi
+
+    # Build the candidate on tmpfs — avoids writing a full .tmp next to the
+    # whitelist on overlay every run when content ends up unchanged (cmp below).
+    mkdir -p /tmp/clash 2>/dev/null
+    local tmp_file="/tmp/clash/fakeip_whitelist_new.$$"
+    {
+        if [ -n "$manual_content" ]; then
+            printf '%s\n\n' "$manual_content"
+        fi
+        printf '%s\n' "$FAKEIP_AUTO_BEGIN"
+        printf '# Auto-generated from IP-CIDR entries in rule-providers referenced by\n'
+        printf '# rules whose action is NOT DIRECT/REJECT. In '"'"'whitelist'"'"' mode also includes\n'
+        printf '# dns.fake-ip-filter: RULE-SET:<name> entries (colon syntax).\n'
+        printf '# In '"'"'rule'"'"' mode, dns.fake-ip-filter: RULE-SET,<name>,fake-ip rows are added.\n'
+        printf '# To disable this block, set\n'
+        printf '# AUTO_FAKEIP_WHITELIST=false in /opt/clash/settings.\n'
+        printf '# Last updated: %s\n' "$(date -u +'%Y-%m-%d %H:%M:%S UTC' 2>/dev/null)"
+        if [ -n "$AUTO_FAKEIP_SOURCES" ]; then
+            printf '# Sources (%d entries): %s\n' "$count" "$AUTO_FAKEIP_SOURCES"
+        else
+            printf '# Sources: (none — no matching rule-providers contained IPv4 CIDRs)\n'
+        fi
+        if [ -n "$auto_entries" ]; then
+            printf '%s\n' "$auto_entries"
+        fi
+        printf '%s\n' "$FAKEIP_AUTO_END"
+    } > "$tmp_file"
+
+    # Skip the rewrite when the file content is byte-identical to what we would
+    # produce — avoids spurious mtime churn on every start/update.
+    if [ -f "$FAKEIP_WHITELIST_FILE" ] && cmp -s "$tmp_file" "$FAKEIP_WHITELIST_FILE"; then
+        rm -f "$tmp_file"
+        msg "Auto fakeip whitelist unchanged ($count entries)"
+        return 0
+    fi
+
+    mv "$tmp_file" "$FAKEIP_WHITELIST_FILE"
+    if [ -n "$AUTO_FAKEIP_SOURCES" ]; then
+        msg "Auto fakeip whitelist refreshed: $count IPv4 CIDR entries from rule-providers [$AUTO_FAKEIP_SOURCES]"
+    else
+        msg "Auto fakeip whitelist refreshed: no matching rule-providers contained IPv4 CIDRs"
+    fi
+    return 0
+}
+
 update_fakeip_whitelist_sets() {
     msg "Updating fakeip whitelist IP-CIDR sets..."
     load_all_settings_once
@@ -1733,6 +2185,7 @@ update_fakeip_whitelist_sets() {
 
     if [ "$fake_ip_filter_mode" != "whitelist" ] && [ "$fake_ip_filter_mode" != "rule" ]; then
         msg "fake-ip-filter-mode is '${fake_ip_filter_mode:-blacklist}', not 'whitelist'/'rule' — clearing fakeip sets if they exist"
+        rm -f "$FAKEIP_WHITELIST_DIGEST_FILE" 2>/dev/null
         if hash nft 2>/dev/null && nft list set inet clash fakeip_whitelist >/dev/null 2>&1; then
             nft flush set inet clash fakeip_whitelist 2>/dev/null
             msg "nft fakeip_whitelist set cleared"
@@ -1744,7 +2197,32 @@ update_fakeip_whitelist_sets() {
         return 0
     fi
 
+    # refresh_fakeip_whitelist_file / generate_fakeip_whitelist_auto read the
+    # global FAKE_IP_FILTER_MODE to decide whether to include fake-ip-filter:
+    # sources. Propagate the locally extracted value so the cron path behaves
+    # identically to the start() path.
+    FAKE_IP_FILTER_MODE="$fake_ip_filter_mode"
+    refresh_fakeip_whitelist_file
     FAKEIP_WHITELIST_IPS=$(read_fakeip_whitelist_entries)
+
+    # Skip nft/ipset flush+repopulate when the normalized CIDR list matches what
+    # we last applied (digest in tmpfs). Saves kernel work; digest is cleared on
+    # blacklist mode above and lost on reboot (full refresh — correct).
+    mkdir -p /tmp/clash 2>/dev/null
+    local current_digest prev_digest
+    if [ -z "$FAKEIP_WHITELIST_IPS" ]; then
+        current_digest="empty"
+    elif command -v sha256sum >/dev/null 2>&1; then
+        current_digest=$(printf '%s\n' "$FAKEIP_WHITELIST_IPS" | LC_ALL=C sort -u | sha256sum | awk '{print $1}')
+    else
+        current_digest=$(printf '%s\n' "$FAKEIP_WHITELIST_IPS" | LC_ALL=C sort -u | cksum | awk '{print $1"-"$2}')
+    fi
+    prev_digest=""
+    [ -f "$FAKEIP_WHITELIST_DIGEST_FILE" ] && prev_digest=$(tr -d '\r\n' < "$FAKEIP_WHITELIST_DIGEST_FILE")
+    if [ -n "$prev_digest" ] && [ "$current_digest" = "$prev_digest" ]; then
+        msg "Fakeip whitelist kernel sets unchanged (same CIDR digest, skipping nft/ipset rewrite)"
+        return 0
+    fi
 
     if hash nft 2>/dev/null; then
         if nft list set inet clash fakeip_whitelist >/dev/null 2>&1; then
@@ -1756,13 +2234,15 @@ update_fakeip_whitelist_sets() {
             else
                 msg "Fakeip whitelist file is empty, nft set cleared"
             fi
+            printf '%s\n' "$current_digest" > "$FAKEIP_WHITELIST_DIGEST_FILE"
         else
             msg "WARNING: nft set inet clash fakeip_whitelist not found — is the clash-rules firewall active?"
             return 1
         fi
     elif hash iptables 2>/dev/null; then
         if hash ipset 2>/dev/null; then
-            ensure_fakeip_ipset && populate_fakeip_ipset_from_file
+            ensure_fakeip_ipset && populate_fakeip_ipset_from_file && \
+                printf '%s\n' "$current_digest" > "$FAKEIP_WHITELIST_DIGEST_FILE"
         else
             msg "ERROR: ipset not available for iptables fakeip whitelist update"
             return 1
@@ -1952,6 +2432,7 @@ start() {
     # (both modes leave part of the traffic on real IPs and need firewall-level
     # marking for services — see is_ipcidr_whitelist_mode()).
     if is_ipcidr_whitelist_mode; then
+        refresh_fakeip_whitelist_file
         FAKEIP_WHITELIST_IPS=$(read_fakeip_whitelist_entries)
         if [ -n "$FAKEIP_WHITELIST_IPS" ]; then
             msg "Loaded fakeip whitelist: $(echo "$FAKEIP_WHITELIST_IPS" | wc -l | xargs) IP/CIDR entries from $FAKEIP_WHITELIST_FILE (mode: $FAKE_IP_FILTER_MODE)"
