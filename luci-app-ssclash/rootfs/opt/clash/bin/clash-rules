@@ -198,18 +198,30 @@ is_valid_ipv4_cidr() {
 
 # Read and validate entries from the fakeip whitelist file.
 # Outputs valid IPv4/CIDR entries one per line; skips comments and blank lines.
+# Uses a single awk process instead of per-line grep/sed forks for performance.
 read_fakeip_whitelist_entries() {
     [ -f "$FAKEIP_WHITELIST_FILE" ] || return 0
-    while IFS= read -r line; do
-        line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        [ -z "$line" ] && continue
-        case "$line" in '#'*) continue ;; esac
-        if is_valid_ipv4_cidr "$line"; then
-            echo "$line"
-        else
-            msg "WARNING: skipping invalid IP/CIDR in fakeip whitelist: '$line'"
-        fi
-    done < "$FAKEIP_WHITELIST_FILE"
+    awk '
+    {
+        sub(/[[:space:]]*\/\/.*$/, "")
+        sub(/^[[:space:]]+/, "")
+        sub(/[[:space:]]+$/, "")
+        if ($0 == "" || substr($0,1,1) == "#") next
+        n = split($0, a, "/")
+        if (n > 2) { print "WARNING: skipping invalid IP/CIDR in fakeip whitelist: " $0 > "/dev/stderr"; next }
+        ip = a[1]
+        if (split(ip, oct, ".") != 4) { print "WARNING: skipping invalid IP/CIDR in fakeip whitelist: " $0 > "/dev/stderr"; next }
+        ok = 1
+        for (i = 1; i <= 4; i++) {
+            if (oct[i] !~ /^[0-9]+$/ || int(oct[i]) > 255) { ok = 0; break }
+        }
+        if (!ok) { print "WARNING: skipping invalid IP/CIDR in fakeip whitelist: " $0 > "/dev/stderr"; next }
+        if (n == 2 && (a[2] !~ /^[0-9]+$/ || int(a[2]) > 32)) {
+            print "WARNING: skipping invalid IP/CIDR in fakeip whitelist: " $0 > "/dev/stderr"; next
+        }
+        print $0
+    }
+    ' "$FAKEIP_WHITELIST_FILE"
 }
 
 # Create the fakeip whitelist ipset if it does not exist, then flush it ready for population.
@@ -649,16 +661,46 @@ extract_proxy_rule_set_names() {
         sub(/#.*/, "", line)
         gsub(/^[[:space:]]*/, "", line)
         gsub(/[[:space:]]+$/, "", line)
-        if (line !~ /^-[[:space:]]*RULE-SET,/) next
-        sub(/^-[[:space:]]*RULE-SET,/, "", line)
-        # line is now "<name>,<action>[,<options>...]"
-        n = split(line, parts, ",")
-        if (n < 2) next
-        name = parts[1]
-        action = toupper(parts[2])
-        if (action == "DIRECT" || action == "REJECT" || action == "REJECT-DROP" || action == "PASS") next
-        if (name == "") next
-        print name
+
+        # Simple rule: - RULE-SET,name,action
+        if (line ~ /^-[[:space:]]*RULE-SET,/) {
+            sub(/^-[[:space:]]*RULE-SET,/, "", line)
+            n = split(line, parts, ",")
+            if (n < 2) next
+            name = parts[1]
+            action = toupper(parts[2])
+            if (action == "DIRECT" || action == "REJECT" || action == "REJECT-DROP" || action == "PASS") next
+            if (name == "") next
+            print name
+            next
+        }
+
+        # Compound OR rule: - OR,((RULE-SET,n1,...),(RULE-SET,n2,...)),ACTION
+        if (line ~ /^-[[:space:]]*OR,\(/) {
+            # Extract action: everything after the last ")),"
+            temp = line
+            if (sub(/.*\)\),/, "", temp)) {
+                action = toupper(temp)
+                sub(/,.*$/, "", action)
+                gsub(/[[:space:]]/, "", action)
+            } else {
+                next
+            }
+            if (action == "DIRECT" || action == "REJECT" || action == "REJECT-DROP" || action == "PASS") next
+            # Extract all RULE-SET,name occurrences
+            remainder = line
+            while (length(remainder) > 0) {
+                idx = index(remainder, "RULE-SET,")
+                if (idx == 0) break
+                remainder = substr(remainder, idx + 9)
+                name = remainder
+                sub(/[,)[:space:]].*$/, "", name)
+                if (name != "") print name
+                if (length(name) >= length(remainder)) break
+                remainder = substr(remainder, length(name) + 1)
+            }
+            next
+        }
     }
     ' "$CONFIG_FILE" | sort -u
 }
@@ -788,6 +830,42 @@ extract_ipv4_cidr_from_rule_provider_file() {
 
     [ -f "$file" ] || return 0
 
+    # domain behavior never contributes IP-CIDRs
+    case "$behavior" in
+        classical|ipcidr) ;;
+        *) return 0 ;;
+    esac
+
+    # .mrs files cannot be parsed as text — convert to text and cache persistently.
+    # Cache lives in /opt/clash/lst/mrs_cache/ (outside tmpfs) so it survives reboots.
+    # Invalidation is content-based (md5sum of source .mrs), not mtime-based, so
+    # provider re-downloads with unchanged content do not trigger re-conversion.
+    local parse_file="$file"
+    case "$file" in
+        *.mrs)
+            local mrs_cache_dir="/opt/clash/lst/mrs_cache"
+            local base_name
+            base_name="$(basename "$file" .mrs)"
+            local cache_file="$mrs_cache_dir/${base_name}.txt"
+            local sig_file="$mrs_cache_dir/${base_name}.sig"
+            mkdir -p "$mrs_cache_dir"
+
+            local current_sig cached_sig=""
+            current_sig=$(md5sum "$file" 2>/dev/null | awk '{print $1}')
+            [ -f "$sig_file" ] && cached_sig=$(cat "$sig_file" 2>/dev/null)
+
+            if [ -z "$current_sig" ] || [ "$current_sig" != "$cached_sig" ] || [ ! -s "$cache_file" ]; then
+                if ! /opt/clash/bin/clash convert-ruleset "$behavior" mrs "$file" "$cache_file" 2>/dev/null \
+                     || [ ! -s "$cache_file" ]; then
+                    rm -f "$cache_file" "$sig_file"
+                    return 0
+                fi
+                printf '%s\n' "$current_sig" > "$sig_file"
+            fi
+            parse_file="$cache_file"
+            ;;
+    esac
+
     case "$behavior" in
         classical)
             awk '
@@ -797,18 +875,15 @@ extract_ipv4_cidr_from_rule_provider_file() {
                 sub(/#.*/, "", line)
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
                 if (line == "") next
-                # Strip the YAML list marker ("- ") so that "  - IP-CIDR,..."
-                # lines from classical rule-provider files are recognised.
                 sub(/^-[[:space:]]*/, "", line)
                 if (line == "") next
                 if (toupper(substr(line, 1, 8)) != "IP-CIDR,") next
                 rest = substr(line, 9)
-                # Strip trailing options like ",no-resolve"
                 sub(/,.*$/, "", rest)
                 gsub(/[[:space:]]+/, "", rest)
                 if (rest == "" || index(rest, ":") > 0) next
                 print rest
-            }' "$file"
+            }' "$parse_file"
             ;;
         ipcidr)
             awk '
@@ -818,18 +893,12 @@ extract_ipv4_cidr_from_rule_provider_file() {
                 sub(/#.*/, "", line)
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
                 if (line == "") next
-                # YAML-style ipcidr providers may also use "- <cidr>" list syntax.
                 sub(/^-[[:space:]]*/, "", line)
                 if (line == "") next
-                # ipcidr files are expected to contain one CIDR per line
                 sub(/[[:space:]].*$/, "", line)
                 if (index(line, ":") > 0) next
                 print line
-            }' "$file"
-            ;;
-        *)
-            # domain / mixed / unknown behaviors do not contribute IP-CIDRs
-            return 0
+            }' "$parse_file"
             ;;
     esac
 }
@@ -2098,6 +2167,33 @@ refresh_fakeip_whitelist_file() {
     [ "$AUTO_FAKEIP_WHITELIST" = "true" ] || return 0
     is_ipcidr_whitelist_mode || return 0
 
+    # Fast-path: compute a combined md5sum of all ipcidr/classical source files.
+    # If it matches the saved digest and the whitelist file already exists,
+    # no provider content has changed → skip the expensive generation entirely.
+    # This avoids re-running the full entry validation loop on every start.
+    local _fp_base_dir _fp_digest_file _fp_current_digest _fp_saved_digest
+    _fp_base_dir=$(get_providers_base_dir)
+    _fp_digest_file="/opt/clash/lst/mrs_cache/.whitelist_src_digest"
+    mkdir -p /opt/clash/lst/mrs_cache 2>/dev/null
+    _fp_current_digest=$(
+        extract_rule_providers | while IFS='|' read -r _n beh _t rpath; do
+            case "$beh" in classical|ipcidr) ;; *) continue ;; esac
+            case "$rpath" in
+                ./*) _f="$_fp_base_dir/${rpath#./}" ;;
+                /*)  _f="$rpath" ;;
+                *)   _f="$_fp_base_dir/$rpath" ;;
+            esac
+            [ -f "$_f" ] && md5sum "$_f" 2>/dev/null | awk '{print $1}'
+        done | md5sum | awk '{print $1}'
+    )
+    _fp_saved_digest=""
+    [ -f "$_fp_digest_file" ] && _fp_saved_digest=$(cat "$_fp_digest_file" 2>/dev/null)
+    if [ -n "$_fp_saved_digest" ] && [ "$_fp_current_digest" = "$_fp_saved_digest" ] \
+       && [ -f "$FAKEIP_WHITELIST_FILE" ]; then
+        msg "Auto fakeip whitelist sources unchanged, skipping regeneration"
+        return 0
+    fi
+
     # Run generate_fakeip_whitelist_auto with stdout redirected — NOT via
     # command substitution. The latter would fork a subshell and discard
     # AUTO_FAKEIP_SOURCES, breaking the # Sources: header and log lines.
@@ -2159,11 +2255,13 @@ refresh_fakeip_whitelist_file() {
     # produce — avoids spurious mtime churn on every start/update.
     if [ -f "$FAKEIP_WHITELIST_FILE" ] && cmp -s "$tmp_file" "$FAKEIP_WHITELIST_FILE"; then
         rm -f "$tmp_file"
+        printf '%s\n' "$_fp_current_digest" > "$_fp_digest_file"
         msg "Auto fakeip whitelist unchanged ($count entries)"
         return 0
     fi
 
     mv "$tmp_file" "$FAKEIP_WHITELIST_FILE"
+    printf '%s\n' "$_fp_current_digest" > "$_fp_digest_file"
     if [ -n "$AUTO_FAKEIP_SOURCES" ]; then
         msg "Auto fakeip whitelist refreshed: $count IPv4 CIDR entries from rule-providers [$AUTO_FAKEIP_SOURCES]"
     else
@@ -2215,7 +2313,7 @@ update_fakeip_whitelist_sets() {
     elif command -v sha256sum >/dev/null 2>&1; then
         current_digest=$(printf '%s\n' "$FAKEIP_WHITELIST_IPS" | LC_ALL=C sort -u | sha256sum | awk '{print $1}')
     else
-        current_digest=$(printf '%s\n' "$FAKEIP_WHITELIST_IPS" | LC_ALL=C sort -u | cksum | awk '{print $1"-"$2}')
+        current_digest=$(printf '%s\n' "$FAKEIP_WHITELIST_IPS" | LC_ALL=C sort -u | md5sum | awk '{print $1}')
     fi
     prev_digest=""
     [ -f "$FAKEIP_WHITELIST_DIGEST_FILE" ] && prev_digest=$(tr -d '\r\n' < "$FAKEIP_WHITELIST_DIGEST_FILE")
