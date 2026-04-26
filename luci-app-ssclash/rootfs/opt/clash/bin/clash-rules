@@ -1869,8 +1869,19 @@ apply_nft_rules() {
     # Create nft set for fakeip whitelist IP-CIDR entries (always created so rules can reference it)
     nft add set inet clash fakeip_whitelist '{ type ipv4_addr; flags interval; auto-merge; }'
     if { [ "$fake_ip_filter_mode" = "whitelist" ] || [ "$fake_ip_filter_mode" = "rule" ]; } && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
-        local nft_wl_elements=$(echo "$FAKEIP_WHITELIST_IPS" | tr '\n' ',' | sed 's/,$//')
-        nft add element inet clash fakeip_whitelist "{ $nft_wl_elements }"
+        echo "$FAKEIP_WHITELIST_IPS" | awk '
+            BEGIN { count=0; line="" }
+            {
+                if (count > 0) line = line ","
+                line = line $0
+                count++
+                if (count >= 500) {
+                    print "add element inet clash fakeip_whitelist { " line " }"
+                    line = ""; count = 0
+                }
+            }
+            END { if (count > 0) print "add element inet clash fakeip_whitelist { " line " }" }
+        ' | nft -f -
         msg "Populated fakeip_whitelist nft set with $(echo "$FAKEIP_WHITELIST_IPS" | wc -l | xargs) entries (mode: $fake_ip_filter_mode)."
     fi
 
