@@ -12,6 +12,7 @@ RULESET_LINK="${CLASH_DIR}/ruleset"
 PROXY_PROVIDERS_TMPFS="/tmp/clash/proxy_providers"
 PROXY_PROVIDERS_LINK="${CLASH_DIR}/proxy_providers"
 DNS_BACKUP_FILE="/opt/clash/.dns_backup"
+CONFIG_UPGRADE_BACKUP="${CLASH_DIR}/.config.yaml.upgrade.bak"
 SETTINGS_FILE="${CLASH_DIR}/settings"
 USE_TMPFS_RULES="true"
 
@@ -34,6 +35,19 @@ check_files() {
 
 	if [ ! -f "$CLASH_RULES" ]; then
 		msg "WARNING: Clash rules script not found at $CLASH_RULES"
+	fi
+
+	return 0
+}
+
+restore_upgrade_config_backup() {
+	if [ -f "$CONFIG_UPGRADE_BACKUP" ]; then
+		if mv "$CONFIG_UPGRADE_BACKUP" "$CLASH_DIR/config.yaml"; then
+			msg "Restored preserved config.yaml from package upgrade backup"
+		else
+			msg "ERROR: Failed to restore preserved config.yaml from package upgrade backup"
+			return 1
+		fi
 	fi
 
 	return 0
@@ -236,6 +250,8 @@ restart_dnsmasq() {
 
 start_service() {
 	msg "Starting Clash service..."
+
+	restore_upgrade_config_backup || return 1
 
 	# Check the required files
 	check_files || return 1
