@@ -196,6 +196,65 @@ is_valid_ipv4_cidr() {
     esac
 }
 
+# Parse rules: and return source IPv4/CIDR entries from SRC-IP-CIDR rules by
+# action class: proxy, direct, or reject. PASS rules are intentionally ignored.
+extract_src_ip_cidrs_by_action() {
+    local wanted_action="$1"
+    [ -f "$CONFIG_FILE" ] || return 0
+
+    awk -v wanted_action="$wanted_action" '
+    function trim(s) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+        gsub(/^["'"'"']|["'"'"']$/, "", s)
+        return s
+    }
+    function action_class(action) {
+        action = toupper(action)
+        if (action == "DIRECT") return "direct"
+        if (action == "REJECT" || action == "REJECT-DROP") return "reject"
+        if (action == "PASS") return "pass"
+        return "proxy"
+    }
+    /^rules:/ { in_rules = 1; next }
+    /^[a-zA-Z][^[:space:]]*:/ && !/^[[:space:]]/ { in_rules = 0 }
+    in_rules {
+        line = $0
+        sub(/#.*/, "", line)
+        gsub(/^[[:space:]]*/, "", line)
+        gsub(/[[:space:]]+$/, "", line)
+        if (line == "") next
+        sub(/^-[[:space:]]*/, "", line)
+        line = trim(line)
+        if (toupper(substr(line, 1, 12)) != "SRC-IP-CIDR,") next
+
+        n = split(line, parts, ",")
+        if (n < 3) next
+        cidr = trim(parts[2])
+        action = trim(parts[3])
+        if (action_class(action) != wanted_action) next
+        if (cidr != "") print cidr
+    }
+    ' "$CONFIG_FILE" | while IFS= read -r cidr; do
+        if is_valid_ipv4_cidr "$cidr"; then
+            echo "$cidr"
+        else
+            warn "Skipping invalid SRC-IP-CIDR rule source: $cidr"
+        fi
+    done | sort -u
+}
+
+extract_proxy_src_ip_cidrs() {
+    extract_src_ip_cidrs_by_action "proxy"
+}
+
+extract_direct_src_ip_cidrs() {
+    extract_src_ip_cidrs_by_action "direct"
+}
+
+extract_reject_src_ip_cidrs() {
+    extract_src_ip_cidrs_by_action "reject"
+}
+
 # Read and validate entries from the fakeip whitelist file.
 # Outputs valid IPv4/CIDR entries one per line; skips comments and blank lines.
 # Uses a single awk process instead of per-line grep/sed forks for performance.
@@ -1358,20 +1417,84 @@ apply_nft_marking_mangle() {
     fi
 
     if [ -n "$fake_ip_range" ]; then
-        nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto tcp meta mark set "$MARK_TPROXY" counter
-        nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto udp meta mark set "$udp_mark" counter
+        nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto tcp counter meta mark set "$MARK_TPROXY"
+        nft add rule inet clash CLASH_MARK ip daddr "$fake_ip_range" meta l4proto udp counter meta mark set "$udp_mark"
         msg "Marking applied only for fake-ip range: $fake_ip_range (UDP mark: $udp_mark)"
     else
-        nft add rule inet clash CLASH_MARK meta l4proto tcp meta mark set "$MARK_TPROXY" counter
-        nft add rule inet clash CLASH_MARK meta l4proto udp meta mark set "$udp_mark" counter
+        nft add rule inet clash CLASH_MARK meta l4proto tcp counter meta mark set "$MARK_TPROXY"
+        nft add rule inet clash CLASH_MARK meta l4proto udp counter meta mark set "$udp_mark"
         msg "Marking applied for all traffic (UDP mark: $udp_mark)"
     fi
     # Additionally mark traffic to fakeip whitelist IP-CIDR entries (whitelist/rule modes)
     if is_ipcidr_whitelist_mode && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
-        nft add rule inet clash CLASH_MARK ip daddr @fakeip_whitelist meta l4proto tcp meta mark set "$MARK_TPROXY" counter
-        nft add rule inet clash CLASH_MARK ip daddr @fakeip_whitelist meta l4proto udp meta mark set "$udp_mark" counter
+        nft add rule inet clash CLASH_MARK ip daddr @fakeip_whitelist meta l4proto tcp counter meta mark set "$MARK_TPROXY"
+        nft add rule inet clash CLASH_MARK ip daddr @fakeip_whitelist meta l4proto udp counter meta mark set "$udp_mark"
         msg "Marking also applied for fakeip whitelist IP-CIDR nft set (UDP mark: $udp_mark, mode: $FAKE_IP_FILTER_MODE)"
     fi
+}
+
+# For nftables - mirror simple SRC-IP-CIDR DIRECT/REJECT rules in explicit
+# fake-ip-filter whitelist/rule mode before any source proxy marking is applied.
+apply_nft_src_ip_cidr_policy() {
+    [ "$MODE" = "explicit" ] || return 0
+    is_ipcidr_whitelist_mode || return 0
+
+    local reject_src_cidrs direct_src_cidrs
+    reject_src_cidrs=$(extract_reject_src_ip_cidrs)
+    direct_src_cidrs=$(extract_direct_src_ip_cidrs)
+
+    if [ -n "$reject_src_cidrs" ]; then
+        echo "$reject_src_cidrs" | while IFS= read -r src; do
+            [ -n "$src" ] && nft add rule inet clash CLASH_MARK ip saddr "$src" counter reject
+        done
+        msg "SRC-IP-CIDR reject policy applied for: $(echo "$reject_src_cidrs" | tr '\n' ' ')"
+    fi
+
+    if [ -n "$direct_src_cidrs" ]; then
+        echo "$direct_src_cidrs" | while IFS= read -r src; do
+            [ -n "$src" ] && nft add rule inet clash CLASH_MARK ip saddr "$src" return
+        done
+        msg "SRC-IP-CIDR direct policy applied for: $(echo "$direct_src_cidrs" | tr '\n' ' ')"
+    fi
+}
+
+# For nftables - in explicit mode with fake-ip-filter-mode whitelist/rule,
+# route source clients mentioned in non-DIRECT SRC-IP-CIDR rules through Clash
+# before the normal fake-ip destination filter. This lets mihomo actually
+# receive the flow and apply the matching SRC-IP-CIDR rule.
+apply_nft_src_ip_cidr_marking() {
+    local server_ips="$1"
+    [ "$MODE" = "explicit" ] || return 0
+    is_ipcidr_whitelist_mode || return 0
+
+    local src_cidrs
+    src_cidrs=$(extract_proxy_src_ip_cidrs)
+    [ -n "$src_cidrs" ] || return 0
+
+    local udp_mark="$MARK_TPROXY"
+    if [ "$PROXY_MODE" = "mixed" ]; then
+        udp_mark="$MARK_TUN_UDP"
+    fi
+
+    echo "$src_cidrs" | while IFS= read -r src; do
+        [ -n "$src" ] || continue
+
+        local network ip
+        for network in $RESERVED_NETWORKS; do
+            nft add rule inet clash CLASH_MARK ip saddr "$src" ip daddr "$network" return
+        done
+
+        if [ -n "$server_ips" ]; then
+            echo "$server_ips" | while IFS= read -r ip; do
+                [ -n "$ip" ] && nft add rule inet clash CLASH_MARK ip saddr "$src" ip daddr "$ip" return
+            done
+        fi
+
+        nft add rule inet clash CLASH_MARK ip saddr "$src" meta l4proto tcp counter meta mark set "$MARK_TPROXY"
+        nft add rule inet clash CLASH_MARK ip saddr "$src" meta l4proto udp counter meta mark set "$udp_mark"
+    done
+
+    msg "SRC-IP-CIDR source marking applied for: $(echo "$src_cidrs" | tr '\n' ' ') (UDP mark: $udp_mark)"
 }
 
 # For nftables - apply TPROXY rules in proxy chain (mode-aware)
@@ -1384,12 +1507,12 @@ apply_nft_tproxy_proxy() {
             msg "TPROXY rules skipped (TUN mode - all traffic routes via clash-tun)"
             ;;
         "mixed")
-            nft add rule inet clash proxy meta mark "$MARK_TPROXY" meta l4proto tcp tproxy ip to 127.0.0.1:7894 counter
+            nft add rule inet clash proxy meta mark "$MARK_TPROXY" meta l4proto tcp counter tproxy ip to 127.0.0.1:7894
             msg "TPROXY rules applied for TCP only (MIXED mode)"
             ;;
         *)
-            nft add rule inet clash proxy meta mark "$MARK_TPROXY" meta l4proto tcp tproxy ip to 127.0.0.1:7894 counter
-            nft add rule inet clash proxy meta mark "$MARK_TPROXY" meta l4proto udp tproxy ip to 127.0.0.1:7894 counter
+            nft add rule inet clash proxy meta mark "$MARK_TPROXY" meta l4proto tcp counter tproxy ip to 127.0.0.1:7894
+            nft add rule inet clash proxy meta mark "$MARK_TPROXY" meta l4proto udp counter tproxy ip to 127.0.0.1:7894
             msg "TPROXY rules applied for TCP and UDP (TPROXY mode)"
             ;;
     esac
@@ -1555,8 +1678,8 @@ apply_nft_output_rules() {
     fi
 
     if [ -n "$fake_ip_range" ]; then
-        nft add rule inet clash output ip daddr "$fake_ip_range" meta mark 0 meta l4proto tcp meta mark set "$MARK_TPROXY" counter
-        nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto udp meta mark set "$output_udp_mark" counter
+        nft add rule inet clash output ip daddr "$fake_ip_range" meta mark 0 meta l4proto tcp counter meta mark set "$MARK_TPROXY"
+        nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto udp counter meta mark set "$output_udp_mark"
         msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range"
     else
         nft add rule inet clash output meta mark 0 meta l4proto tcp meta mark set "$MARK_TPROXY"
@@ -1566,8 +1689,8 @@ apply_nft_output_rules() {
     # Additionally mark locally generated traffic to fakeip whitelist IP-CIDR entries
     # (applies in both whitelist and rule fake-ip-filter-mode values)
     if { [ "$fake_ip_filter_mode" = "whitelist" ] || [ "$fake_ip_filter_mode" = "rule" ]; } && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
-        nft add rule inet clash output ip daddr @fakeip_whitelist meta mark 0 meta l4proto tcp meta mark set "$MARK_TPROXY" counter
-        nft add rule inet clash output ip daddr @fakeip_whitelist meta l4proto udp meta mark set "$output_udp_mark" counter
+        nft add rule inet clash output ip daddr @fakeip_whitelist meta mark 0 meta l4proto tcp counter meta mark set "$MARK_TPROXY"
+        nft add rule inet clash output ip daddr @fakeip_whitelist meta l4proto udp counter meta mark set "$output_udp_mark"
         msg "OUTPUT: Marking also applied for fakeip whitelist IP-CIDR nft set"
     fi
 
@@ -1669,6 +1792,11 @@ apply_iptables_server_exclusions() {
 # TUN:     TCP+UDP both marked 0x0001 for routing to clash-tun (table 100)
 apply_iptables_tproxy_rules() {
     local fake_ip_range="$1"
+    local server_ips="$2"
+
+    apply_iptables_src_ip_cidr_policy
+    apply_iptables_src_ip_cidr_rules "$server_ips"
+
     case "$PROXY_MODE" in
         "tun")
             if [ -n "$fake_ip_range" ]; then
@@ -1724,6 +1852,77 @@ apply_iptables_tproxy_rules() {
                 ;;
         esac
     fi
+}
+
+# For iptables - mirror simple SRC-IP-CIDR DIRECT/REJECT rules in explicit
+# fake-ip-filter whitelist/rule mode before any source proxy marking is applied.
+apply_iptables_src_ip_cidr_policy() {
+    [ "$MODE" = "explicit" ] || return 0
+    is_ipcidr_whitelist_mode || return 0
+
+    local reject_src_cidrs direct_src_cidrs
+    reject_src_cidrs=$(extract_reject_src_ip_cidrs)
+    direct_src_cidrs=$(extract_direct_src_ip_cidrs)
+
+    if [ -n "$reject_src_cidrs" ]; then
+        echo "$reject_src_cidrs" | while IFS= read -r src; do
+            [ -n "$src" ] && iptables -t mangle -A CLASH_PROCESS -s "$src" -j DROP
+        done
+        msg "SRC-IP-CIDR reject policy applied for: $(echo "$reject_src_cidrs" | tr '\n' ' ')"
+    fi
+
+    if [ -n "$direct_src_cidrs" ]; then
+        echo "$direct_src_cidrs" | while IFS= read -r src; do
+            [ -n "$src" ] && iptables -t mangle -A CLASH_PROCESS -s "$src" -j RETURN
+        done
+        msg "SRC-IP-CIDR direct policy applied for: $(echo "$direct_src_cidrs" | tr '\n' ' ')"
+    fi
+}
+
+# For iptables - in explicit mode with fake-ip-filter-mode whitelist/rule, route
+# source clients mentioned in non-DIRECT SRC-IP-CIDR rules through Clash before
+# the normal fake-ip destination filter. Reserved networks and proxy server IPs
+# are returned first to preserve LAN and upstream access.
+apply_iptables_src_ip_cidr_rules() {
+    local server_ips="$1"
+    [ "$MODE" = "explicit" ] || return 0
+    is_ipcidr_whitelist_mode || return 0
+
+    local src_cidrs
+    src_cidrs=$(extract_proxy_src_ip_cidrs)
+    [ -n "$src_cidrs" ] || return 0
+
+    echo "$src_cidrs" | while IFS= read -r src; do
+        [ -n "$src" ] || continue
+
+        local network ip
+        for network in $RESERVED_NETWORKS; do
+            iptables -t mangle -A CLASH_PROCESS -s "$src" -d "$network" -j RETURN
+        done
+
+        if [ -n "$server_ips" ]; then
+            echo "$server_ips" | while IFS= read -r ip; do
+                [ -n "$ip" ] && iptables -t mangle -A CLASH_PROCESS -s "$src" -d "$ip/32" -j RETURN
+            done
+        fi
+
+        case "$PROXY_MODE" in
+            "tun")
+                iptables -t mangle -A CLASH_PROCESS -s "$src" -p tcp -j MARK --set-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -s "$src" -p udp -j MARK --set-mark "$MARK_TPROXY"
+                ;;
+            "mixed")
+                iptables -t mangle -A CLASH_PROCESS -s "$src" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -s "$src" -p udp -j MARK --set-mark "$MARK_TUN_UDP"
+                ;;
+            *)
+                iptables -t mangle -A CLASH_PROCESS -s "$src" -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
+                iptables -t mangle -A CLASH_PROCESS -s "$src" -p udp -j TPROXY --on-ip 127.0.0.1 --on-port 7894 --tproxy-mark "$MARK_TPROXY"
+                ;;
+        esac
+    done
+
+    msg "SRC-IP-CIDR source marking applied for: $(echo "$src_cidrs" | tr '\n' ' ')"
 }
 
 # For iptables - apply interface exclusion rules in output chain
@@ -1915,6 +2114,8 @@ apply_nft_rules() {
         msg "Minimal exclusion rules applied (fake-ip-filter-mode: whitelist - only system protection)"
     fi
 
+    apply_nft_src_ip_cidr_policy
+    apply_nft_src_ip_cidr_marking "$server_ips"
     apply_nft_marking_mangle "$fake_ip_range"
 
     # Apply TPROXY rules
@@ -1979,7 +2180,7 @@ apply_iptables_rules() {
         msg "Minimal exclusion rules applied (fake-ip-filter-mode: whitelist - only system protection)"
     fi
 
-    apply_iptables_tproxy_rules "$fake_ip_range"
+    apply_iptables_tproxy_rules "$fake_ip_range" "$server_ips"
 
     # Allow forwarding between LAN and clash-tun in TUN/MIXED mode
     apply_iptables_tun_forward_rules
