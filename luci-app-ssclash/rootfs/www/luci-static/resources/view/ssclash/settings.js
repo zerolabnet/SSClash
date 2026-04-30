@@ -944,6 +944,7 @@ function createKernelDownloadSection() {
 
 const LIGHT_PANEL_TEXT = '#1f2937';
 const LIGHT_PANEL_MUTED_TEXT = '#4b5563';
+const LIGHT_PANEL_INPUT_STYLE = 'background: #fff; color: ' + LIGHT_PANEL_TEXT + '; border-color: #93c5fd;';
 
 function createModeSelector(currentMode) {
     const container = E('div', { 'class': 'cbi-section' });
@@ -1473,7 +1474,8 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
                 'id': 'hwid_user_agent',
                 'class': 'cbi-input-text',
                 'value': hwidUserAgent || 'SSClash',
-                'placeholder': 'SSClash'
+                'placeholder': 'SSClash',
+                'style': LIGHT_PANEL_INPUT_STYLE
             })
         ]),
         E('div', {}, [
@@ -1486,7 +1488,8 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
                 'id': 'hwid_device_os',
                 'class': 'cbi-input-text',
                 'value': hwidDeviceOS || 'OpenWrt',
-                'placeholder': 'OpenWrt'
+                'placeholder': 'OpenWrt',
+                'style': LIGHT_PANEL_INPUT_STYLE
             })
         ])
     ]);
