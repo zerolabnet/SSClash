@@ -917,7 +917,7 @@ extract_ipv4_cidr_from_rule_provider_file() {
                 if ! /opt/clash/bin/clash convert-ruleset "$behavior" mrs "$file" "$cache_file" 2>/dev/null \
                      || [ ! -s "$cache_file" ]; then
                     rm -f "$cache_file" "$sig_file"
-                    return 0
+                    return 2
                 fi
                 printf '%s\n' "$current_sig" > "$sig_file"
             fi
@@ -971,8 +971,10 @@ extract_ipv4_cidr_from_rule_provider_file() {
 # names that actually contributed at least one entry (used for the header
 # comment inside the whitelist file).
 AUTO_FAKEIP_SOURCES=""
+AUTO_FAKEIP_INCOMPLETE="false"
 generate_fakeip_whitelist_auto() {
     AUTO_FAKEIP_SOURCES=""
+    AUTO_FAKEIP_INCOMPLETE="false"
 
     local proxy_sets
     proxy_sets=$(extract_proxy_rule_set_names)
@@ -996,7 +998,11 @@ generate_fakeip_whitelist_auto() {
 
     local providers
     providers=$(extract_rule_providers)
-    [ -z "$providers" ] && return 0
+    if [ -z "$providers" ]; then
+        AUTO_FAKEIP_INCOMPLETE="true"
+        msg "Auto fakeip whitelist: rule-providers are referenced but none could be parsed"
+        return 0
+    fi
 
     local base_dir
     base_dir=$(get_providers_base_dir)
@@ -1005,16 +1011,23 @@ generate_fakeip_whitelist_auto() {
     tmp_out="/tmp/clash/clash_autowl_raw.$$"
     local tmp_sources
     tmp_sources="/tmp/clash/clash_autowl_sources.$$"
+    local tmp_incomplete
+    tmp_incomplete="/tmp/clash/clash_autowl_incomplete.$$"
     mkdir -p /tmp/clash
     : > "$tmp_out"
     : > "$tmp_sources"
+    : > "$tmp_incomplete"
 
     local set_name
     echo "$proxy_sets" | while IFS= read -r set_name; do
         [ -z "$set_name" ] && continue
         local provider_line
         provider_line=$(echo "$providers" | awk -F'|' -v n="$set_name" '$1 == n { print; exit }')
-        [ -z "$provider_line" ] && continue
+        if [ -z "$provider_line" ]; then
+            msg "Auto fakeip whitelist: provider '$set_name' is referenced but not defined (skipped)"
+            echo "$set_name" >> "$tmp_incomplete"
+            continue
+        fi
 
         local behavior type path full_path
         behavior=$(echo "$provider_line" | awk -F'|' '{print $2}')
@@ -1029,11 +1042,18 @@ generate_fakeip_whitelist_auto() {
 
         if [ ! -f "$full_path" ]; then
             msg "Auto fakeip whitelist: provider '$set_name' file not found: $full_path (skipped)"
+            echo "$set_name" >> "$tmp_incomplete"
             continue
         fi
 
         local entries
         entries=$(extract_ipv4_cidr_from_rule_provider_file "$full_path" "$behavior")
+        local rc=$?
+        if [ "$rc" -ne 0 ]; then
+            msg "Auto fakeip whitelist: provider '$set_name' could not be parsed: $full_path (skipped)"
+            echo "$set_name" >> "$tmp_incomplete"
+            continue
+        fi
         if [ -n "$entries" ]; then
             echo "$entries" >> "$tmp_out"
             echo "$set_name" >> "$tmp_sources"
@@ -1054,8 +1074,11 @@ generate_fakeip_whitelist_auto() {
     if [ -s "$tmp_sources" ]; then
         AUTO_FAKEIP_SOURCES=$(sort -u "$tmp_sources" | tr '\n' ' ' | sed 's/[[:space:]]*$//')
     fi
+    if [ -s "$tmp_incomplete" ]; then
+        AUTO_FAKEIP_INCOMPLETE="true"
+    fi
 
-    rm -f "$tmp_out" "$tmp_sources"
+    rm -f "$tmp_out" "$tmp_sources" "$tmp_incomplete"
 }
 
 # Function to extract server IPs from config.yaml (with subscription support)
@@ -2409,6 +2432,22 @@ refresh_fakeip_whitelist_file() {
     # Run generate_fakeip_whitelist_auto with stdout redirected — NOT via
     # command substitution. The latter would fork a subshell and discard
     # AUTO_FAKEIP_SOURCES, breaking the # Sources: header and log lines.
+    local existing_auto_count=0
+    if [ -f "$FAKEIP_WHITELIST_FILE" ]; then
+        existing_auto_count=$(awk '
+            /^#[[:space:]]*AUTO-BEGIN/ { in_auto = 1; next }
+            /^#[[:space:]]*AUTO-END/   { in_auto = 0; next }
+            in_auto {
+                line = $0
+                sub(/[[:space:]]*\/\/.*$/, "", line)
+                sub(/#.*/, "", line)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                if (line != "") count++
+            }
+            END { print count + 0 }
+        ' "$FAKEIP_WHITELIST_FILE" 2>/dev/null)
+    fi
+
     local auto_entries tmp_auto
     tmp_auto="/tmp/clash/clash_autowl_stdout.$$"
     mkdir -p /tmp/clash
@@ -2416,6 +2455,11 @@ refresh_fakeip_whitelist_file() {
     generate_fakeip_whitelist_auto > "$tmp_auto"
     auto_entries=$(cat "$tmp_auto" 2>/dev/null)
     rm -f "$tmp_auto"
+
+    if [ "$AUTO_FAKEIP_INCOMPLETE" = "true" ] && [ "${existing_auto_count:-0}" -gt 0 ]; then
+        msg "WARNING: Auto fakeip whitelist generation incomplete; keeping existing generated block ($existing_auto_count entries)"
+        return 0
+    fi
 
     mkdir -p "$(dirname "$FAKEIP_WHITELIST_FILE")" 2>/dev/null
 
@@ -2536,13 +2580,36 @@ update_fakeip_whitelist_sets() {
 
     if hash nft 2>/dev/null; then
         if nft list set inet clash fakeip_whitelist >/dev/null 2>&1; then
-            nft flush set inet clash fakeip_whitelist
-            if [ -n "$FAKEIP_WHITELIST_IPS" ]; then
-                local nft_elements=$(echo "$FAKEIP_WHITELIST_IPS" | tr '\n' ',' | sed 's/,$//')
-                nft add element inet clash fakeip_whitelist "{ $nft_elements }"
-                msg "Updated nft fakeip_whitelist set: $(echo "$FAKEIP_WHITELIST_IPS" | wc -l | xargs) entries"
+            local nft_batch="/tmp/clash/fakeip_whitelist_nft.$$"
+            {
+                printf 'flush set inet clash fakeip_whitelist\n'
+                if [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+                    printf '%s\n' "$FAKEIP_WHITELIST_IPS" | awk '
+                        BEGIN { count=0; line="" }
+                        {
+                            if (count > 0) line = line ","
+                            line = line $0
+                            count++
+                            if (count >= 500) {
+                                print "add element inet clash fakeip_whitelist { " line " }"
+                                line = ""; count = 0
+                            }
+                        }
+                        END { if (count > 0) print "add element inet clash fakeip_whitelist { " line " }" }
+                    '
+                fi
+            } > "$nft_batch"
+            if nft -f "$nft_batch"; then
+                rm -f "$nft_batch"
+                if [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+                    msg "Updated nft fakeip_whitelist set: $(echo "$FAKEIP_WHITELIST_IPS" | wc -l | xargs) entries"
+                else
+                    msg "Fakeip whitelist file is empty, nft set cleared"
+                fi
             else
-                msg "Fakeip whitelist file is empty, nft set cleared"
+                rm -f "$nft_batch"
+                msg "ERROR: Failed to update nft fakeip_whitelist set; keeping previous set contents"
+                return 1
             fi
             printf '%s\n' "$current_digest" > "$FAKEIP_WHITELIST_DIGEST_FILE"
         else
