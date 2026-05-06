@@ -3,6 +3,7 @@
 'require fs';
 'require ui';
 'require network';
+'require uci';
 
 // =============================================================================
 // SECTION: Network interface helpers
@@ -490,6 +491,38 @@ async function loadSettings() {
             hwidUserAgent: 'SSClash',
             hwidDeviceOS: 'OpenWrt'
         };
+    }
+}
+
+async function loadUiLanguage() {
+    try {
+        await uci.load('luci');
+        return uci.get('luci', 'main', 'lang') || 'auto';
+    } catch (e) {
+        console.warn('Failed to load LuCI language:', e);
+        return 'auto';
+    }
+}
+
+async function saveUiLanguage(language) {
+    const nextLanguage = language || 'auto';
+
+    try {
+        await uci.load('luci');
+        const currentLanguage = uci.get('luci', 'main', 'lang') || 'auto';
+
+        if (currentLanguage === nextLanguage) {
+            return false;
+        }
+
+        uci.set('luci', 'main', 'lang', nextLanguage);
+        await uci.save();
+        await uci.apply();
+
+        return true;
+    } catch (e) {
+        ui.addNotification(null, E('p', _('Failed to save language: %s').format(e.message || e)), 'error');
+        return false;
     }
 }
 
@@ -1381,7 +1414,7 @@ function createInterfaceSelector(interfaces, selectedInterfaces, currentMode) {
     return container;
 }
 
-function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUserAgent, hwidDeviceOS) {
+function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUserAgent, hwidDeviceOS, uiLanguage) {
     const container = E('div', { 'class': 'cbi-section' });
 
     container.appendChild(E('h3', _('Additional Settings')));
@@ -1432,9 +1465,33 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
 
     settingsContainer.appendChild(tmpfsLabel);
 
+    const languageCard = E('div', {
+        'style': cardStyle + 'cursor: default;'
+    }, [
+        E('span', { 'style': cardHeaderStyle }, [
+            E('span', '🌐 ' + _('Language'))
+        ]),
+        E('select', {
+            'id': 'ui_language',
+            'class': 'cbi-input-select',
+            'style': LIGHT_PANEL_INPUT_STYLE
+        }, [
+            E('option', { 'value': 'auto' }, _('System default')),
+            E('option', { 'value': 'en' }, 'English'),
+            E('option', { 'value': 'ru' }, 'Русский'),
+            E('option', { 'value': 'zh-cn' }, '简体中文')
+        ])
+    ]);
+
+    settingsContainer.appendChild(languageCard);
+
     setTimeout(() => {
         blockQuicCheckbox.checked = blockQuic;
         tmpfsCheckbox.checked = useTmpfsRules;
+        const languageSelect = document.getElementById('ui_language');
+        if (languageSelect) {
+            languageSelect.value = uiLanguage || 'auto';
+        }
     }, 0);
 
     const hwidCheckbox = E('input', {
@@ -1602,12 +1659,13 @@ return view.extend({
     load: function() {
         return Promise.all([
             getNetworkInterfaces(),
-            loadSettings()
+            loadSettings(),
+            loadUiLanguage()
         ]);
     },
 
     render: async function(data) {
-        const [interfaces, settings] = data;
+        const [interfaces, settings, uiLanguage] = data;
         const selectedInterfaces = await loadInterfacesByMode(settings.mode);
 
         let detectedLanBridge = null;
@@ -1644,7 +1702,8 @@ return view.extend({
             settings.useTmpfsRules,
             settings.enableHwid,
             settings.hwidUserAgent,
-            settings.hwidDeviceOS
+            settings.hwidDeviceOS,
+            uiLanguage
         );
         const kernelDownloadSection = createKernelDownloadSection();
 
@@ -1749,6 +1808,7 @@ return view.extend({
                 const enableHwid = additionalSettings.querySelector('#enable_hwid')?.checked || false;
                 const hwidUserAgent = additionalSettings.querySelector('#hwid_user_agent')?.value || 'SSClash';
                 const hwidDeviceOS = additionalSettings.querySelector('#hwid_device_os')?.value || 'OpenWrt';
+                const savedUiLanguage = additionalSettings.querySelector('#ui_language')?.value || 'auto';
 
                 const selected = [];
                 const checkboxes = interfaceSelector.querySelectorAll('input[type="checkbox"]:checked');
@@ -1771,7 +1831,15 @@ return view.extend({
                 );
 
                 if (success) {
+                    const languageChanged = await saveUiLanguage(savedUiLanguage);
                     updateCurrentStatus(mode, autoDetectLan, autoDetectWan, selected, detectedLanBridge, detectedWanInterface);
+
+                    if (languageChanged) {
+                        ui.addNotification(null, E('p', _('Language changed. Reloading page...')), 'info');
+                        window.setTimeout(function() {
+                            window.location.reload();
+                        }, 600);
+                    }
                 }
             }
         }, _('Save Settings'));

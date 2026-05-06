@@ -635,3 +635,15 @@ msgstr "Поддержать"
 
 msgid "Support the author"
 msgstr "Поддержать автора"
+
+msgid "Language"
+msgstr "Язык"
+
+msgid "System default"
+msgstr "Системное значение по умолчанию"
+
+msgid "Language changed. Reloading page..."
+msgstr "Язык изменён. Перезагрузка страницы..."
+
+msgid "Failed to save language: %s"
+msgstr "Не удалось сохранить язык: %s"
