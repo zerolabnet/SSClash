@@ -13,13 +13,21 @@
 
 Update the package list to ensure you have the latest available versions.
 
+For **OpenWrt >= 25** (apk):
+
+```bash
+apk update
+```
+
+For **OpenWrt < 25** (opkg):
+
 ```bash
 opkg update
 ```
 
 ## Step 2: Install Required Packages
 
-In most cases you **do not need to install anything manually**: when you install `luci-app-ssclash` from a configured OpenWrt feed, `opkg` will automatically pull in:
+In general, package managers resolve dependencies automatically when you install from a package repository. In this guide, we use manual installation from GitHub Releases, and required dependencies are:
 
 - `coreutils-base64` – for scripts that use Base64;
 - `kmod-tun` – for TUN mode;
@@ -27,13 +35,16 @@ In most cases you **do not need to install anything manually**: when you install
   - `kmod-nft-tproxy` for **firewall4 / nftables**;
   - `iptables-mod-tproxy` for **firewall3 / iptables**.
 
-Only if you are installing the `.ipk` offline or building a custom image and dependencies are missing, you can install the transparent proxy modules manually:
+Only if you are installing packages manually (`.apk`/`.ipk`) or building a custom image and dependencies are missing, you can install the transparent proxy modules manually:
 
 ```bash
-# For nftables (firewall4)
+# For nftables (firewall4) on OpenWrt >= 25:
+apk add kmod-nft-tproxy
+
+# For nftables (firewall4) on older OpenWrt:
 opkg install kmod-nft-tproxy
 
-# For iptables (firewall3, OpenWrt < 22.03.x)
+# For iptables (firewall3, OpenWrt < 22.03.x):
 opkg install iptables-mod-tproxy
 ```
 
@@ -42,9 +53,15 @@ opkg install iptables-mod-tproxy
 Download the SSClash package and install it.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.4.0/luci-app-ssclash_4.4.0-r1_all.ipk -o /tmp/luci-app-ssclash_4.4.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_4.4.0-r1_all.ipk
-rm /tmp/*.ipk
+# OpenWrt >= 25:
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash-4.5.0-r1.apk -o /tmp/luci-app-ssclash-4.5.0-r1.apk
+apk add /tmp/luci-app-ssclash-4.5.0-r1.apk
+
+# OpenWrt < 25:
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash_4.5.0-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_4.5.0-r1_all.ipk
+
+rm /tmp/*.ipk /tmp/*.apk
 ```
 
 ## Step 4: Automatic Mihomo Kernel Management
@@ -171,6 +188,11 @@ Access the Clash dashboard directly from the LuCI interface with automatic confi
 To remove Clash completely:
 
 ```bash
+# OpenWrt >= 25:
+apk del luci-app-ssclash
+
+# OpenWrt < 25:
 opkg remove luci-app-ssclash
+
 rm -rf /opt/clash
 ```

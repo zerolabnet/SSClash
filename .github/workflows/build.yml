@@ -9,6 +9,10 @@ on:
         description: 'Release Tag (v1.x.x)'
         required: true
         type: string
+      release-description:
+        description: 'Release description shown at top of notes (optional)'
+        required: false
+        type: string
 
 jobs:
   release:
@@ -44,12 +48,13 @@ jobs:
           
       - name: Prepare Build Environment
         run: |
+          set -euo pipefail
           cd "$SDK_DL_DIR"
           if ! ( wget -q -O - "$SDK_URL_PATH/sha256sums" | grep -- "$SDK_NAME" > sha256sums.small 2>/dev/null ) ; then
             echo "Can not find ${SDK_NAME} file in sha256sums."
             exit 1
           fi
-          SDK_FILE="$(cat sha256sums.small | cut -d' ' -f2 | sed 's/*//g')"
+          SDK_FILE="$(cut -d' ' -f2 < sha256sums.small | sed 's/*//g')"
           wget -q -O "$SDK_FILE" "$SDK_URL_PATH/$SDK_FILE"
           if ! sha256sum -c ./sha256sums.small >/dev/null 2>&1 ; then
             echo "SDK can not be verified!"
@@ -59,6 +64,7 @@ jobs:
           
       - name: Build Packages
         run: |
+          set -euo pipefail
           cd "$SDK_HOME"
           ./scripts/feeds update > /dev/null 2>&1
           ./scripts/feeds install -a > /dev/null 2>&1
@@ -76,6 +82,7 @@ jobs:
            
       - name: Generate Release Notes
         run: |
+          set -euo pipefail
           echo "## Release ${{ github.event.inputs.release-tag }}" > release_notes_${{ matrix.version }}.md
           echo "" >> release_notes_${{ matrix.version }}.md
           echo "### OpenWrt ${{ matrix.version }} - ${{ matrix.pkg_format }} packages" >> release_notes_${{ matrix.version }}.md
@@ -106,21 +113,24 @@ jobs:
           
       - name: Prepare release files
         run: |
+          set -euo pipefail
           mkdir -p release_files
           find artifacts -type f \( -name "*.ipk" -o -name "*.apk" \) -exec cp {} release_files/ \;
           ls -lah release_files/
           
       - name: Generate Combined Release Notes
+        env:
+          RELEASE_DESCRIPTION_INPUT: ${{ github.event.inputs.release-description }}
         run: |
+          set -euo pipefail
+          release_description="$(printf '%s\n' "${RELEASE_DESCRIPTION_INPUT:-}" | sed '/^[[:space:]]*$/d')"
+
           echo "## Release ${{ github.event.inputs.release-tag }}" > release_notes.md
-          echo "" >> release_notes.md
-          echo "### Packages" >> release_notes.md
-          echo "- **IPK packages** for OpenWrt 24.10.x (opkg)" >> release_notes.md
-          echo "- **APK packages** for OpenWrt 25.12.x (apk package manager)" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "### Build Information" >> release_notes.md
-          echo "- Build date: $(date)" >> release_notes.md
-          echo "- Supported architectures: x86/64" >> release_notes.md
+          if [ -n "$release_description" ]; then
+            echo "" >> release_notes.md
+            echo "### Description" >> release_notes.md
+            printf '%s\n' "$release_description" >> release_notes.md
+          fi
           
       - name: Release and Upload Assets
         uses: softprops/action-gh-release@v2

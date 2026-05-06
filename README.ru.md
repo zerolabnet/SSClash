@@ -10,6 +10,14 @@
 
 Обновите список пакетов, чтобы у вас были последние доступные версии.
 
+Для **OpenWrt >= 25** (apk):
+
+```bash
+apk update
+```
+
+Для **OpenWrt < 25** (opkg):
+
 ```bash
 opkg update
 ```
@@ -17,7 +25,7 @@ opkg update
 
 ## Шаг 2: Установка необходимых пакетов
 
-В большинстве случаев **не нужно ничего устанавливать вручную**: при установке `luci-app-ssclash` из настроенного фида OpenWrt `opkg` автоматически подтянет:
+В общем случае пакетный менеджер подтягивает зависимости автоматически при установке из пакетного репозитория. В этом руководстве используется ручная установка из GitHub Releases, а необходимые зависимости такие:
 
 - `coreutils-base64` — для скриптов, работающих с Base64;
 - `kmod-tun` — модуль ядра для режима TUN;
@@ -25,13 +33,16 @@ opkg update
   - `kmod-nft-tproxy` для **firewall4 / nftables**;
   - `iptables-mod-tproxy` для **firewall3 / iptables**.
 
-Только если вы устанавливаете `.ipk` офлайн или собираете собственный образ и какие‑то зависимости отсутствуют, вы можете установить модули прозрачного прокси вручную:
+Только если вы устанавливаете пакеты вручную (`.apk`/`.ipk`) или собираете собственный образ и какие‑то зависимости отсутствуют, вы можете установить модули прозрачного прокси вручную:
 
 ```bash
-# Для nftables (firewall4)
+# Для nftables (firewall4) в OpenWrt >= 25:
+apk add kmod-nft-tproxy
+
+# Для nftables (firewall4) в более старых OpenWrt:
 opkg install kmod-nft-tproxy
 
-# Для iptables (firewall3, OpenWrt < 22.03.x)
+# Для iptables (firewall3, OpenWrt < 22.03.x):
 opkg install iptables-mod-tproxy
 ```
 
@@ -40,9 +51,15 @@ opkg install iptables-mod-tproxy
 Загрузите пакет SSClash и установите его.
 
 ```bash
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.4.0/luci-app-ssclash_4.4.0-r1_all.ipk -o /tmp/luci-app-ssclash_4.4.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_4.4.0-r1_all.ipk
-rm /tmp/*.ipk
+# OpenWrt >= 25:
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash-4.5.0-r1.apk -o /tmp/luci-app-ssclash-4.5.0-r1.apk
+apk add /tmp/luci-app-ssclash-4.5.0-r1.apk
+
+# OpenWrt < 25:
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash_4.5.0-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.0-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_4.5.0-r1_all.ipk
+
+rm /tmp/*.ipk /tmp/*.apk
 ```
 
 ## Шаг 4: Автоматическое управление ядром Mihomo
@@ -172,6 +189,11 @@ SSClash предлагает два режима обработки интерф
 Чтобы полностью удалить Clash:
 
 ```bash
+# OpenWrt >= 25:
+apk del luci-app-ssclash
+
+# OpenWrt < 25:
 opkg remove luci-app-ssclash
+
 rm -rf /opt/clash
 ```
