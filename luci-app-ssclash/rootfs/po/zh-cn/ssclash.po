@@ -1,0 +1,633 @@
+# Simplified Chinese translation for SSClash
+# Copyright (C) 2024-2026 ZeroChaos
+# This file is distributed under the same license as the package.
+#
+msgid ""
+msgstr ""
+"Language: zh-cn\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Configuration"
+msgstr "配置"
+
+msgid "Settings"
+msgstr "设置"
+
+msgid "Rulesets"
+msgstr "规则集"
+
+msgid "Log"
+msgstr "日志"
+
+msgid "Please wait"
+msgstr "请稍候"
+
+msgid "Saving..."
+msgstr "正在保存..."
+
+msgid "Deleting..."
+msgstr "正在删除..."
+
+msgid "Creating..."
+msgstr "正在创建..."
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Create"
+msgstr "创建"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Delete"
+msgstr "删除"
+
+msgid "Open Dashboard"
+msgstr "打开控制面板"
+
+msgid "Stop Service"
+msgstr "停止服务"
+
+msgid "Start Service"
+msgstr "启动服务"
+
+msgid "Clash is running"
+msgstr "Clash 正在运行"
+
+msgid "Clash stopped"
+msgstr "Clash 已停止"
+
+msgid "Clash Configuration"
+msgstr "Clash 配置"
+
+msgid "Your current Clash config. When applied, the changes will be saved and the service will be restarted."
+msgstr "当前 Clash 配置。应用后将保存更改并重启服务。"
+
+msgid "Save & Restart core"
+msgstr "保存并重启内核"
+
+msgid "Save & Reload config"
+msgstr "保存并重载配置"
+
+msgid "More actions"
+msgstr "更多操作"
+
+msgid "Unable to start and enable service: %s"
+msgstr "无法启动并启用服务：%s"
+
+msgid "Unable to stop and disable service: %s"
+msgstr "无法停止并禁用服务：%s"
+
+msgid "Popup was blocked. Please allow popups for this site."
+msgstr "弹出窗口已被拦截。请允许此站点弹出窗口。"
+
+msgid "Service is not running."
+msgstr "服务未运行。"
+
+msgid "Error opening dashboard:"
+msgstr "打开控制面板时出错："
+
+msgid "Failed to open dashboard: %s"
+msgstr "无法打开控制面板：%s"
+
+msgid "Configuration saved successfully."
+msgstr "配置已成功保存。"
+
+msgid "Configuration test failed — service not reloaded. Please fix the errors below: %s"
+msgstr "配置测试失败，服务未重载。请修复以下错误：%s"
+
+msgid "unknown error"
+msgstr "未知错误"
+
+msgid "Service reloaded successfully."
+msgstr "服务已成功重载。"
+
+msgid "Unable to save contents: %s"
+msgstr "无法保存内容：%s"
+
+msgid "Reload configuration via Mihomo API — active connections are preserved. Firewall rules are NOT rebuilt; use \"Save & Restart core\" when changing external-controller / tproxy-port / tun / fake-ip-filter-mode / proxy mode."
+msgstr "通过 Mihomo API 重载配置，保留现有连接。防火墙规则不会重建；修改 external-controller / tproxy-port / tun / fake-ip-filter-mode / 代理模式时请使用“保存并重启内核”。"
+
+msgid "Full restart: stops and starts the Mihomo core, rebuilds firewall rules and refreshes subscription IPs. Active connections are dropped."
+msgstr "完整重启：停止并启动 Mihomo 内核，重建防火墙规则并刷新订阅 IP。现有连接会断开。"
+
+msgid "Service is not running — config reload requires a running Mihomo instance. Use \"Save & Restart core\" instead."
+msgstr "服务未运行，配置重载需要正在运行的 Mihomo 实例。请改用“保存并重启内核”。"
+
+msgid "Config reload failed (%s, HTTP %s). %s Try \"Save & Restart core\" for a full restart."
+msgstr "配置重载失败（%s，HTTP %s）。%s 请尝试使用“保存并重启内核”进行完整重启。"
+
+msgid "(Hint: the system curl has no HTTPS support. Install curl-ssl, or use plain external-controller for hot reload.)"
+msgstr "（提示：系统 curl 不支持 HTTPS。请安装 curl-ssl，或使用普通 external-controller 进行热重载。）"
+
+msgid "Config reloaded, but updating subscription IP cache failed: %s"
+msgstr "配置已重载，但更新订阅 IP 缓存失败：%s"
+
+msgid "Config reloaded via Mihomo API — active connections preserved."
+msgstr "已通过 Mihomo API 重载配置，现有连接已保留。"
+
+msgid "Config reload error: %s. Try \"Save & Restart core\" for a full restart."
+msgstr "配置重载错误：%s。请尝试使用“保存并重启内核”进行完整重启。"
+
+msgid "--- Log truncated, skipped %d older lines ---"
+msgstr "--- 日志已截断，跳过 %d 行较早日志 ---"
+
+msgid "Error executing logread:"
+msgstr "执行 logread 时出错："
+
+msgid "Error reading logs: %s"
+msgstr "读取日志时出错：%s"
+
+msgid "Local Rulesets"
+msgstr "本地规则集"
+
+msgid "Create New List"
+msgstr "创建新列表"
+
+msgid "Here you can manage local lists for use in rule-providers."
+msgstr "可在此管理供 rule-providers 使用的本地列表。"
+
+msgid "No local lists yet. Click \"Create New List\" to add one."
+msgstr "暂无本地列表。点击“创建新列表”添加一个。"
+
+msgid "%d entries"
+msgstr "%d 条目"
+
+msgid "Example usage in your config.yaml:"
+msgstr "在 config.yaml 中的用法示例："
+
+msgid "Editor not initialized."
+msgstr "编辑器未初始化。"
+
+msgid "List \"%s\" saved successfully."
+msgstr "列表“%s”已成功保存。"
+
+msgid "Failed to save list \"%s\": %s"
+msgstr "保存列表“%s”失败：%s"
+
+msgid "Delete Ruleset"
+msgstr "删除规则集"
+
+msgid "Are you sure you want to delete the list \"%s\"? This action cannot be undone."
+msgstr "确定要删除列表“%s”吗？此操作无法撤销。"
+
+msgid "List \"%s\" has been deleted."
+msgstr "列表“%s”已删除。"
+
+msgid "Failed to delete list \"%s\": %s"
+msgstr "删除列表“%s”失败：%s"
+
+msgid "Create New Ruleset"
+msgstr "创建新规则集"
+
+msgid "e.g., my-custom-list"
+msgstr "例如：my-custom-list"
+
+msgid "Invalid name. Only letters, numbers, underscores, and hyphens are allowed."
+msgstr "名称无效。只允许使用字母、数字、下划线和连字符。"
+
+msgid "List Name"
+msgstr "列表名称"
+
+msgid "New list \"%s\" created."
+msgstr "新列表“%s”已创建。"
+
+msgid "Failed to create list: %s"
+msgstr "创建列表失败：%s"
+
+msgid "Cannot read ruleset directory: %s"
+msgstr "无法读取规则集目录：%s"
+
+msgid "A list with this name already exists."
+msgstr "已存在同名列表。"
+
+msgid "TECHNICAL"
+msgstr "技术项"
+
+msgid "IP-CIDR List (fake-ip whitelist/rule mode)"
+msgstr "IP-CIDR 列表（fake-ip 白名单/规则模式）"
+
+msgid "This list is used by the firewall (nftables/iptables) to mark traffic to specified IPs and subnets for proxying when fake-ip-filter-mode is set to \"whitelist\" or \"rule\" (both modes leave part of the traffic on real IPs, which still needs to be proxied). Enter one IPv4 address or CIDR per line (e.g. 8.8.8.8 or 1.2.3.0/24). Lines starting with # are treated as comments. Saving applies changes immediately without restarting Mihomo."
+msgstr "当 fake-ip-filter-mode 设置为“whitelist”或“rule”时，此列表由防火墙（nftables/iptables）用于标记发往指定 IP 和网段的流量以便代理（这两种模式都会让部分流量保留真实 IP，而这些流量仍需要代理）。每行输入一个 IPv4 地址或 CIDR（例如 8.8.8.8 或 1.2.3.0/24）。以 # 开头的行视为注释。保存后立即生效，无需重启 Mihomo。"
+
+msgid "IP-CIDR whitelist saved and firewall rules updated."
+msgstr "IP-CIDR 白名单已保存，防火墙规则已更新。"
+
+msgid "IP-CIDR whitelist saved, but firewall update failed: %s"
+msgstr "IP-CIDR 白名单已保存，但防火墙更新失败：%s"
+
+msgid "Failed to save IP-CIDR whitelist: %s"
+msgstr "保存 IP-CIDR 白名单失败：%s"
+
+msgid "The block between # AUTO-BEGIN and # AUTO-END is generated automatically from IP-CIDR entries found in rule-providers referenced by non-DIRECT rules. In fake-ip-filter-mode: whitelist, dns.fake-ip-filter: RULE-SET:<name> entries (colon syntax) are merged as well. In fake-ip-filter-mode: rule, dns.fake-ip-filter: entries of the form RULE-SET,<name>,fake-ip are merged (Mihomo routing-style syntax for that mode; real-ip rows are ignored). It is refreshed on service start, on every clash-rules update (cron, every 30 min) and on \"Save\" / \"Regenerate now\". Edit only the area OUTSIDE the markers — everything inside will be overwritten. Set AUTO_FAKEIP_WHITELIST=false in /opt/clash/settings to disable auto-generation and manage the list by hand."
+msgstr "# AUTO-BEGIN 和 # AUTO-END 之间的区块会根据非 DIRECT 规则引用的 rule-providers 中的 IP-CIDR 条目自动生成。在 fake-ip-filter-mode: whitelist 模式下，也会合并 dns.fake-ip-filter 中形如 RULE-SET:<name> 的条目（冒号语法）。在 fake-ip-filter-mode: rule 模式下，会合并 dns.fake-ip-filter 中形如 RULE-SET,<name>,fake-ip 的条目（该模式的 Mihomo 路由式语法；real-ip 行会被忽略）。它会在服务启动、每次 clash-rules update（cron，每 30 分钟）以及点击“保存”/“立即重新生成”时刷新。请只编辑标记之外的区域，标记内的内容会被覆盖。若要关闭自动生成并手动维护列表，请在 /opt/clash/settings 中设置 AUTO_FAKEIP_WHITELIST=false。"
+
+msgid "Regenerate now"
+msgstr "立即重新生成"
+
+msgid "Regenerating..."
+msgstr "正在重新生成..."
+
+msgid "IP-CIDR whitelist regenerated from rule-providers."
+msgstr "已从 rule-providers 重新生成 IP-CIDR 白名单。"
+
+msgid "Regeneration failed: %s"
+msgstr "重新生成失败：%s"
+
+msgid "Failed to regenerate IP-CIDR whitelist: %s"
+msgstr "重新生成 IP-CIDR 白名单失败：%s"
+
+msgid "WAN Interfaces"
+msgstr "WAN 接口"
+
+msgid "Ethernet Interfaces"
+msgstr "以太网接口"
+
+msgid "WiFi Interfaces"
+msgstr "WiFi 接口"
+
+msgid "USB Interfaces"
+msgstr "USB 接口"
+
+msgid "VPN Interfaces"
+msgstr "VPN 接口"
+
+msgid "Virtual Interfaces"
+msgstr "虚拟接口"
+
+msgid "Other Interfaces"
+msgstr "其他接口"
+
+msgid "Mihomo Kernel Management"
+msgstr "Mihomo 内核管理"
+
+msgid "Download and manage the Mihomo (Clash Meta) kernel binary."
+msgstr "下载并管理 Mihomo（Clash Meta）内核二进制文件。"
+
+msgid "Interface Processing Mode"
+msgstr "接口处理模式"
+
+msgid "Choose how to handle network interfaces for proxy processing."
+msgstr "选择代理处理网络接口的方式。"
+
+msgid "Proxy Mode"
+msgstr "代理模式"
+
+msgid "Choose how traffic is redirected to Clash: TPROXY (all traffic), TUN (all traffic via virtual interface), or MIXED (TCP via TPROXY, UDP via TUN — best for gaming)."
+msgstr "选择流量重定向到 Clash 的方式：TPROXY（全部流量）、TUN（全部流量经虚拟接口）或 MIXED（TCP 经 TPROXY，UDP 经 TUN，适合游戏）。"
+
+msgid "Transparent proxy mode. Routes both TCP and UDP through TPROXY port 7894. Best compatibility, requires kernel TPROXY support."
+msgstr "透明代理模式。TCP 和 UDP 都通过 TPROXY 端口 7894 转发。兼容性最好，需要内核 TPROXY 支持。"
+
+msgid "TUN interface mode. Creates virtual network interface for all traffic. Better performance, works without TPROXY. Requires TUN kernel module."
+msgstr "TUN 接口模式。为全部流量创建虚拟网络接口。性能更好，无需 TPROXY。需要 TUN 内核模块。"
+
+msgid "Hybrid mode (best for gaming). TCP via TPROXY (stable), UDP via TUN (low latency). Optimal for online games requiring fast UDP."
+msgstr "混合模式（适合游戏）。TCP 走 TPROXY（稳定），UDP 走 TUN（低延迟）。适合需要快速 UDP 的在线游戏。"
+
+msgid "TUN Stack"
+msgstr "TUN 栈"
+
+msgid "Choose Mihomo TUN stack. `system` is fastest but depends on kernel capabilities; `gvisor` is more compatible; `mixed` combines both."
+msgstr "选择 Mihomo TUN 栈。`system` 最快但依赖内核能力；`gvisor` 兼容性更好；`mixed` 结合两者。"
+
+msgid "system: kernel network stack. If TCP in TUN fails on your device, try gvisor."
+msgstr "system：内核网络栈。如果设备上的 TUN TCP 失败，请尝试 gvisor。"
+
+msgid "gvisor: userspace stack, usually most compatible across routers."
+msgstr "gvisor：用户态网络栈，通常对各种路由器兼容性最好。"
+
+msgid "mixed: hybrid stack mode supported by some Mihomo builds."
+msgstr "mixed：部分 Mihomo 构建支持的混合栈模式。"
+
+msgid "Automatic Interface Detection"
+msgstr "自动接口检测"
+
+msgid "Additional Settings"
+msgstr "其他设置"
+
+msgid "Exclude Mode (Universal approach)"
+msgstr "排除模式（通用方式）"
+
+msgid "Process traffic from ALL interfaces except selected ones. Automatically detects and excludes WAN. Recommended for most users."
+msgstr "处理除所选接口以外的所有接口流量。自动检测并排除 WAN。推荐大多数用户使用。"
+
+msgid "Explicit Mode (Precise control)"
+msgstr "显式模式（精确控制）"
+
+msgid "Process traffic ONLY from selected interfaces. More secure but requires manual configuration. Recommended for advanced users."
+msgstr "只处理所选接口的流量。更安全，但需要手动配置。推荐高级用户使用。"
+
+msgid "Automatically detect LAN bridge interface"
+msgstr "自动检测 LAN 桥接口"
+
+msgid "When enabled, automatically finds the main LAN bridge. Disable to manually select specific interfaces."
+msgstr "启用后会自动查找主 LAN 桥。禁用后可手动选择具体接口。"
+
+msgid "Automatically detect WAN interface"
+msgstr "自动检测 WAN 接口"
+
+msgid "When enabled, automatically detects and excludes WAN interface. Disable to manually select interfaces to exclude."
+msgstr "启用后会自动检测并排除 WAN 接口。禁用后可手动选择要排除的接口。"
+
+msgid "Select interfaces to process"
+msgstr "选择要处理的接口"
+
+msgid "Traffic from these interfaces will be processed by the proxy."
+msgstr "来自这些接口的流量会由代理处理。"
+
+msgid "Select interfaces to exclude"
+msgstr "选择要排除的接口"
+
+msgid "Traffic from these interfaces will bypass the proxy (direct routing)."
+msgstr "来自这些接口的流量将绕过代理（直连路由）。"
+
+msgid "Block QUIC traffic (UDP port 443)"
+msgstr "阻止 QUIC 流量（UDP 端口 443）"
+
+msgid "When enabled, blocks QUIC traffic on UDP port 443. This can improve proxy effectiveness for some services like YouTube."
+msgstr "启用后会阻止 UDP 端口 443 上的 QUIC 流量。这可提升 YouTube 等服务的代理效果。"
+
+msgid "Kernel Status"
+msgstr "内核状态"
+
+msgid "Installed"
+msgstr "已安装"
+
+msgid "Not Installed"
+msgstr "未安装"
+
+msgid "Version"
+msgstr "版本"
+
+msgid "System Architecture"
+msgstr "系统架构"
+
+msgid "Latest Available"
+msgstr "最新可用版本"
+
+msgid "Update Available"
+msgstr "有可用更新"
+
+msgid "Kernel is up to date"
+msgstr "内核已是最新"
+
+msgid "Mihomo kernel binary not found"
+msgstr "未找到 Mihomo 内核二进制文件"
+
+msgid "Failed to check latest version"
+msgstr "检查最新版本失败"
+
+msgid "Error checking status"
+msgstr "检查状态时出错"
+
+msgid "Mihomo (version detected)"
+msgstr "Mihomo（已检测到版本）"
+
+msgid "Installed (%dMB)"
+msgstr "已安装（%dMB）"
+
+msgid "Download Latest Kernel"
+msgstr "下载最新内核"
+
+msgid "Download Update"
+msgstr "下载更新"
+
+msgid "Reinstall Kernel"
+msgstr "重新安装内核"
+
+msgid "Downloading..."
+msgstr "正在下载..."
+
+msgid "Checking..."
+msgstr "正在检查..."
+
+msgid "Refresh Status"
+msgstr "刷新状态"
+
+msgid "Restart Service"
+msgstr "重启服务"
+
+msgid "Save Settings"
+msgstr "保存设置"
+
+msgid "Clear All Interfaces"
+msgstr "清除所有接口"
+
+msgid "Mode: Explicit (process only selected)"
+msgstr "模式：显式（仅处理所选接口）"
+
+msgid "Mode: Exclude (process all except selected)"
+msgstr "模式：排除（处理除所选接口外的全部流量）"
+
+msgid "Auto-detected LAN: %s ✓"
+msgstr "自动检测到 LAN：%s ✓"
+
+msgid "Auto-detected WAN: %s ✓"
+msgstr "自动检测到 WAN：%s ✓"
+
+msgid "Manual selection: %s"
+msgstr "手动选择：%s"
+
+msgid "Manual exclusions: %s"
+msgstr "手动排除：%s"
+
+msgid "No interfaces configured"
+msgstr "未配置接口"
+
+msgid "No exclusions configured"
+msgstr "未配置排除项"
+
+msgid "Available LAN bridge: %s"
+msgstr "可用 LAN 桥：%s"
+
+msgid "No LAN bridge detected"
+msgstr "未检测到 LAN 桥"
+
+msgid "Available WAN interface: %s"
+msgstr "可用 WAN 接口：%s"
+
+msgid "No WAN interface detected"
+msgstr "未检测到 WAN 接口"
+
+msgid "Settings saved. Please restart the Clash service for changes to take effect."
+msgstr "设置已保存。请重启 Clash 服务以使更改生效。"
+
+msgid "Failed to save settings: %s"
+msgstr "保存设置失败：%s"
+
+msgid "Clash service restarted successfully."
+msgstr "Clash 服务已成功重启。"
+
+msgid "Failed to restart Clash service: %s"
+msgstr "重启 Clash 服务失败：%s"
+
+msgid "Downloading mihomo kernel..."
+msgstr "正在下载 Mihomo 内核..."
+
+msgid "Mihomo kernel installed successfully. The service was stopped for a safe replacement — press \"Restart Service\" to activate the new kernel."
+msgstr "Mihomo 内核已成功安装。为安全替换已停止服务，请点击“重启服务”激活新内核。"
+
+msgid "Failed to install new binary: %s"
+msgstr "安装新二进制文件失败：%s"
+
+msgid "Failed to set executable permissions: %s"
+msgstr "设置可执行权限失败：%s"
+
+msgid "WARNING: Binary at %s is not executable after chmod (mode: %s). Check filesystem permissions, then manually run: chmod 0755 %s"
+msgstr "警告：%s 在 chmod 后仍不可执行（模式：%s）。请检查文件系统权限，然后手动运行：chmod 0755 %s"
+
+msgid "unknown"
+msgstr "未知"
+
+msgid "Failed to download mihomo kernel: %s"
+msgstr "下载 Mihomo 内核失败：%s"
+
+msgid "Failed to get release information"
+msgstr "获取发布信息失败"
+
+msgid "No binary found for architecture: %s"
+msgstr "未找到适用于该架构的二进制文件：%s"
+
+msgid "HTTP %d: %s"
+msgstr "HTTP %d：%s"
+
+msgid "Latest release is a pre-release"
+msgstr "最新发布是预发布版本"
+
+msgid "Download failed: %s"
+msgstr "下载失败：%s"
+
+msgid "Extraction failed: %s"
+msgstr "解压失败：%s"
+
+msgid "Failed to read /sys/class/net:"
+msgstr "读取 /sys/class/net 失败："
+
+msgid "Failed to execute ip link:"
+msgstr "执行 ip link 失败："
+
+msgid "LuCI network API not available:"
+msgstr "LuCI network API 不可用："
+
+msgid "LuCI network.getNetworks() not available:"
+msgstr "LuCI network.getNetworks() 不可用："
+
+msgid "No network interfaces found on this system"
+msgstr "此系统上未找到网络接口"
+
+msgid "UCI network detection failed, using fallback:"
+msgstr "UCI 网络检测失败，使用备用方式："
+
+msgid "Failed to detect LAN bridge via ip command:"
+msgstr "通过 ip 命令检测 LAN 桥失败："
+
+msgid "Failed to detect LAN bridge:"
+msgstr "检测 LAN 桥失败："
+
+msgid "UCI WAN detection failed, using fallback:"
+msgstr "UCI WAN 检测失败，使用备用方式："
+
+msgid "Failed to read route table:"
+msgstr "读取路由表失败："
+
+msgid "Failed to detect WAN interface:"
+msgstr "检测 WAN 接口失败："
+
+msgid "Failed to detect architecture:"
+msgstr "检测架构失败："
+
+msgid "Failed to get latest release:"
+msgstr "获取最新发布失败："
+
+msgid "Failed to update kernel status:"
+msgstr "更新内核状态失败："
+
+msgid "Failed to update interface checkboxes:"
+msgstr "更新接口复选框失败："
+
+msgid "Failed to update auto detect settings:"
+msgstr "更新自动检测设置失败："
+
+msgid "Failed to detect interfaces:"
+msgstr "检测接口失败："
+
+msgid "Failed to re-detect interfaces:"
+msgstr "重新检测接口失败："
+
+msgid "Failed to uncheck detected %s interface:"
+msgstr "取消勾选检测到的 %s 接口失败："
+
+msgid "Restart Clash service after installing or updating the kernel"
+msgstr "安装或更新内核后重启 Clash 服务"
+
+msgid "Restart Clash service after saving changes"
+msgstr "保存更改后重启 Clash 服务"
+
+msgid "AUTO"
+msgstr "自动"
+
+msgid "Store rules and proxy providers in RAM (tmpfs)"
+msgstr "将规则和代理提供者存储在内存中（tmpfs）"
+
+msgid "When enabled, rulesets and proxy-providers directories are placed on tmpfs for faster access (at the cost of using RAM). Disable to keep them on persistent storage."
+msgstr "启用后，rulesets 和 proxy-providers 目录会放到 tmpfs 中以加快访问速度（会占用内存）。禁用后保留在持久存储中。"
+
+msgid "Add HWID headers to subscriptions"
+msgstr "为订阅添加 HWID 请求头"
+
+msgid "Automatically adds HWID headers to proxy-providers for device tracking (Remnawave compatibility)."
+msgstr "自动为 proxy-providers 添加 HWID 请求头，用于设备跟踪（兼容 Remnawave）。"
+
+msgid "User-Agent"
+msgstr "User-Agent"
+
+msgid "Device OS"
+msgstr "设备 OS"
+
+msgid "Values sent in HTTP headers of proxy-provider requests (User-Agent / x-device-os)."
+msgstr "proxy-provider 请求 HTTP 头中发送的值（User-Agent / x-device-os）。"
+
+msgid "Adding HWID headers to configuration..."
+msgstr "正在向配置添加 HWID 请求头..."
+
+msgid "SSClash"
+msgstr "SSClash"
+
+msgid "Checking for updates..."
+msgstr "正在检查更新..."
+
+msgid "Up to date"
+msgstr "已是最新"
+
+msgid "New version available: %s"
+msgstr "有新版本可用：%s"
+
+msgid "Update check failed"
+msgstr "检查更新失败"
+
+msgid "Download"
+msgstr "下载"
+
+msgid "by"
+msgstr "作者"
+
+msgid "Donate"
+msgstr "捐赠"
+
+msgid "Support the author"
+msgstr "支持作者"
+
+msgid "Language"
+msgstr "语言"
+
+msgid "System default"
+msgstr "系统默认"
+
+msgid "Language changed. Reloading page..."
+msgstr "语言已更改。正在重新加载页面..."
+
+msgid "Failed to save language: %s"
+msgstr "保存语言失败：%s"
