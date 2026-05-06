@@ -641,7 +641,8 @@ extract_fake_ip_config() {
         filter_mode = tolower($0)
     }
     END {
-        if (enable == "true" && mode == "fake-ip" && range != "") {
+        if (enable == "true" && mode == "fake-ip") {
+            if (range == "") range = "198.18.0.0/15"
             # Use blacklist as default if filter_mode is not specified
             print range "|" (filter_mode ? filter_mode : "blacklist")
         }
@@ -1691,30 +1692,38 @@ apply_nft_output_rules() {
         fi
     fi
 
-    # Apply Clash exclusions
-    apply_nft_clash_exclusions_output
-
     # In MIXED mode router-originated UDP must use the TUN mark (0x0003 → table 101 → clash-tun)
     local output_udp_mark="$MARK_TPROXY"
     if [ "$PROXY_MODE" = "mixed" ]; then
         output_udp_mark="$MARK_TUN_UDP"
     fi
 
+    # Mark fake-ip destinations before the root-process bypass below. Router
+    # tools such as curl run as root, but DNS can still resolve proxied domains
+    # to fake-ip addresses, which must be routed back into Mihomo.
     if [ -n "$fake_ip_range" ]; then
         nft add rule inet clash output ip daddr "$fake_ip_range" meta mark 0 meta l4proto tcp counter meta mark set "$MARK_TPROXY"
         nft add rule inet clash output ip daddr "$fake_ip_range" meta l4proto udp counter meta mark set "$output_udp_mark"
         msg "OUTPUT: Marking applied only for fake-ip range: $fake_ip_range"
-    else
+
+        # Additionally mark locally generated traffic to fakeip whitelist
+        # IP-CIDR entries before root bypass.
+        if { [ "$fake_ip_filter_mode" = "whitelist" ] || [ "$fake_ip_filter_mode" = "rule" ]; } && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
+            nft add rule inet clash output ip daddr @fakeip_whitelist meta mark 0 meta l4proto tcp counter meta mark set "$MARK_TPROXY"
+            nft add rule inet clash output ip daddr @fakeip_whitelist meta l4proto udp counter meta mark set "$output_udp_mark"
+            msg "OUTPUT: Marking also applied for fakeip whitelist IP-CIDR nft set"
+        fi
+    fi
+
+    # Apply Clash exclusions after fake-ip marking, so root-originated requests
+    # to fake-ip addresses keep their routing mark while ordinary root traffic
+    # still bypasses the proxy.
+    apply_nft_clash_exclusions_output
+
+    if [ -z "$fake_ip_range" ]; then
         nft add rule inet clash output meta mark 0 meta l4proto tcp meta mark set "$MARK_TPROXY"
         nft add rule inet clash output meta mark 0 meta l4proto udp meta mark set "$output_udp_mark"
         msg "OUTPUT: Marking applied for all traffic"
-    fi
-    # Additionally mark locally generated traffic to fakeip whitelist IP-CIDR entries
-    # (applies in both whitelist and rule fake-ip-filter-mode values)
-    if { [ "$fake_ip_filter_mode" = "whitelist" ] || [ "$fake_ip_filter_mode" = "rule" ]; } && [ -n "$FAKEIP_WHITELIST_IPS" ]; then
-        nft add rule inet clash output ip daddr @fakeip_whitelist meta mark 0 meta l4proto tcp counter meta mark set "$MARK_TPROXY"
-        nft add rule inet clash output ip daddr @fakeip_whitelist meta l4proto udp counter meta mark set "$output_udp_mark"
-        msg "OUTPUT: Marking also applied for fakeip whitelist IP-CIDR nft set"
     fi
 
     msg "Output chain rules applied"
@@ -2110,6 +2119,10 @@ apply_nft_rules() {
     case "$MODE" in
         "explicit")
             apply_nft_explicit_interface_mangle || return 1
+            if [ -n "$fake_ip_range" ]; then
+                apply_nft_output_rules "$server_ips" "" "$fake_ip_filter_mode" "$fake_ip_range"
+                msg "nftables output rules applied for local fake-ip traffic (explicit mode)"
+            fi
             ;;
         *) # exclude mode
             local excluded_interfaces=$(get_excluded_interfaces)
