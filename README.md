@@ -55,7 +55,7 @@ Download the SSClash package and install it.
 ```bash
 # OpenWrt >= 25:
 curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash-4.5.0-r1.apk -o /tmp/luci-app-ssclash-4.5.0-r1.apk
-apk add /tmp/luci-app-ssclash-4.5.0-r1.apk
+apk add --allow-untrusted /tmp/luci-app-ssclash-4.5.0-r1.apk
 
 # OpenWrt < 25:
 curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash_4.5.0-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.0-r1_all.ipk
@@ -86,19 +86,19 @@ cd /opt/clash/bin
 For **amd64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.22/mihomo-linux-amd64-compatible-v1.19.22.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-amd64-compatible-v1.19.24.gz -o clash.gz
 ```
 
 For **arm64** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.22/mihomo-linux-arm64-v1.19.22.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-arm64-v1.19.24.gz -o clash.gz
 ```
 
 For **mipsel_24kc** architecture:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.22/mihomo-linux-mipsle-softfloat-v1.19.22.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-mipsle-softfloat-v1.19.24.gz -o clash.gz
 ```
 
 Need a different architecture? Visit the [MetaCubeX Release Page](https://github.com/MetaCubeX/mihomo/releases) and choose the one that matches your device.

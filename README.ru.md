@@ -53,7 +53,7 @@ opkg install iptables-mod-tproxy
 ```bash
 # OpenWrt >= 25:
 curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash-4.5.0-r1.apk -o /tmp/luci-app-ssclash-4.5.0-r1.apk
-apk add /tmp/luci-app-ssclash-4.5.0-r1.apk
+apk add --allow-untrusted /tmp/luci-app-ssclash-4.5.0-r1.apk
 
 # OpenWrt < 25:
 curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash_4.5.0-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.0-r1_all.ipk
@@ -84,19 +84,19 @@ cd /opt/clash/bin
 Для архитектуры **amd64**:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.22/mihomo-linux-amd64-compatible-v1.19.22.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-amd64-compatible-v1.19.24.gz -o clash.gz
 ```
 
 Для архитектуры **arm64**:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.22/mihomo-linux-arm64-v1.19.22.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-arm64-v1.19.24.gz -o clash.gz
 ```
 
 Для архитектуры **mipsel\_24kc**:
 
 ```bash
-curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.22/mihomo-linux-mipsle-softfloat-v1.19.22.gz -o clash.gz
+curl -L https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-mipsle-softfloat-v1.19.24.gz -o clash.gz
 ```
 
 Нужна другая архитектура? Посетите [страницу релизов MetaCubeX](https://github.com/MetaCubeX/mihomo/releases) и выберите ту, которая соответствует вашему устройству.
