@@ -52,12 +52,12 @@ opkg install iptables-mod-tproxy
 
 ```bash
 # OpenWrt >= 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash-4.5.0-r1.apk -o /tmp/luci-app-ssclash-4.5.0-r1.apk
-apk add --allow-untrusted /tmp/luci-app-ssclash-4.5.0-r1.apk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.1/luci-app-ssclash-4.5.1-r1.apk -o /tmp/luci-app-ssclash-4.5.1-r1.apk
+apk add --allow-untrusted /tmp/luci-app-ssclash-4.5.1-r1.apk
 
 # OpenWrt < 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.0/luci-app-ssclash_4.5.0-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_4.5.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.1/luci-app-ssclash_4.5.1-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.1-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_4.5.1-r1_all.ipk
 
 rm /tmp/*.ipk /tmp/*.apk
 ```

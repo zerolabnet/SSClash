@@ -620,14 +620,3 @@ msgstr "捐赠"
 msgid "Support the author"
 msgstr "支持作者"
 
-msgid "Language"
-msgstr "语言"
-
-msgid "System default"
-msgstr "系统默认"
-
-msgid "Language changed. Reloading page..."
-msgstr "语言已更改。正在重新加载页面..."
-
-msgid "Failed to save language: %s"
-msgstr "保存语言失败：%s"

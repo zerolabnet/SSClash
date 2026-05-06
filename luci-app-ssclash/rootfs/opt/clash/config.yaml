@@ -1,4 +1,5 @@
 mode: rule
+# Proxy Mode: TPROXY
 tproxy-port: 7894
 ipv6: false
 log-level: error
@@ -15,17 +16,27 @@ dns:
   enable: true
   listen: 0.0.0.0:7874
   ipv6: false
-  # Bootstrap DNS
-  default-nameserver: ['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4']
   # Rules for specific domains
   nameserver-policy:
-    '+.polaris-iot.com': [77.88.8.8, 77.88.8.1]
+    '+.polaris-iot.com': 'https://77.88.8.8/dns-query'
+  # Bootstrap DNS
+  default-nameserver:
+    - https://77.88.8.8/dns-query
+    - https://8.8.8.8/dns-query
+  # Proxy nameserver
+  proxy-server-nameserver:
+    - https://77.88.8.8/dns-query
+    - https://8.8.8.8/dns-query
+  # Direct nameserver
+  direct-nameserver:
+    - https://77.88.8.8/dns-query
+    - https://8.8.8.8/dns-query
   # Upstream DNS
-  nameserver: ['https://cloudflare-dns.com/dns-query', 'https://dns.google/dns-query']
-  # nameserver: ['https://cloudflare-dns.com/dns-query#PROXY', 'https://dns.google/dns-query#PROXY']
-
-# find-process-mode: off
-# global-client-fingerprint: chrome
+  nameserver:
+    - https://8.8.8.8/dns-query
+    - https://8.8.4.4/dns-query
+    # - https://8.8.8.8/dns-query#PROXY
+    # - https://8.8.4.4/dns-query#PROXY
 
 profile:
   store-selected: true
@@ -42,19 +53,12 @@ sniffer:
       override-destination: true
     TLS:
       ports: [443, 8443]
-    # QUIC:
-    #   ports: [443, 8443]
   skip-domain:
     - 'Mijia Cloud'
     - '+.lan'
     - '+.local'
     - '+.push.apple.com'
     - '+.apple.com'
-  # To avoid sniffing a specific device on your network
-  # skip-src-address:
-  #   - 192.168.1.100/32
-  # skip-dst-address:
-  #   - 192.168.1.100/32
 
 proxies:
   # vless
@@ -73,115 +77,312 @@ proxies:
       short-id: ae380de2eeded283 # change it
     client-fingerprint: chrome
 
-  - name: 'YY-reality' # change it
-    type: vless
-    server: yy-reality-server-IP # change it
-    port: 443
-    uuid: 3f0d4ce6-e4fe-46f9-804c-cce633e22785 # change it
-    network: tcp
-    tls: true
-    udp: true
-    flow: xtls-rprx-vision
-    servername: masking-domain.example.org # change it
-    reality-opts:
-      public-key: beAHvGPT-mhlYQAvX7u_rQQfnJqTXaStmRFkTnkUolE # change it
-      short-id: 0890fec52c6dd1ca # change it
-    client-fingerprint: chrome
-
 proxy-providers:
   # Provider name
   provider1:
     type: http
-    url: "https://provider-domain.example.org/subscription-url" # change it
+    url: 'https://provider-domain.example.org/subscription-url' # change it
     path: ./proxy_providers/provider1.yaml
     interval: 600
+    header:
+      User-Agent: [v2raytun/android]
+      x-hwid: [your_HWID] # change it or delete header section and generate it from settings
+      x-device-os: [Android]
+      x-ver-os: [16]
+      x-device-model: [Pixel 9]
     # proxy: PROXY
 
 proxy-groups:
-  # Select (used for selecting proxy or proxy group)
-  - name: PROXY
+  - name: 🛡️ VPN
     type: select
-    # disable-udp: true
-    proxies: [XX-reality, YY-reality] # change it, add the others
+    proxies:
+      - ⚡️ Авто
+    include-all: true
+    url: 'https://www.gstatic.com/generate_204'
 
-  # Fallback
-  - name: FALLBACK
-    type: fallback
-    proxies: [XX-reality, YY-reality] # change it, add the others
-    url: 'https://www.gstatic.com/generate_204' # or https://cp.cloudflare.com/generate_204
-    interval: 300
+  - name: 📺 Youtube
+    type: select
+    include-all: true
+    proxies:
+      - 🛡️ VPN
+    filter: 'Россия'
 
-  # Load-balance
-  - name: LB-PROXY
-    type: load-balance
-    proxies: [XX-reality, YY-reality] # change it, add the others
+  - name: 🎮 Games
+    type: url-test
+    tolerance: 150
     url: 'https://www.gstatic.com/generate_204'
     interval: 300
-    strategy: consistent-hashing # or round-robin
+    include-all: true
+    filter: 'Игры|-reality'
 
-  # Subscriptions
-  - name: SUBS
+  - name: 🎮 Games (not blocked)
     type: select
-    use: [provider1]
-    # filter: 'Игры|VPN'
-    # exclude-filter: 'Russia|Россия|Обход'
+    proxies:
+      - 🔓 Без VPN
+      - 🎮 Games
+
+  - name: ⚡️ Авто
+    type: url-test
+    tolerance: 150
+    url: 'https://www.gstatic.com/generate_204'
+    interval: 300
+    include-all: true
+    hidden: true
+    exclude-filter: '🇷🇺|Russia|Россия|Обход|Осталось|Игры'
+
+  - name: PROXY
+    type: select
+    hidden: true
+    proxies:
+      - 🛡️ VPN
+
+  - name: 🔓 Без VPN
+    type: select
+    hidden: true
+    proxies:
+      - DIRECT
 
 rule-providers:
-  direct-domain:
-    behavior: classical
+  private-domains:
+    behavior: domain
     type: http
-    format: text
-    url: 'https://YOUR_URL/direct-domain.list' # change it
-    interval: 1800
-    path: ./ruleset/direct-domain.txt
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/private.mrs'
+    interval: 2592000
+    path: ./ruleset/geosite-private.mrs
     # proxy: PROXY
-  direct-ip:
-    behavior: classical
+
+  category-ru:
+    behavior: domain
     type: http
-    format: text
-    url: 'https://YOUR_URL/direct-ip.list' # change it
-    interval: 1800
-    path: ./ruleset/direct-ip.txt
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/category-ru.mrs'
+    interval: 86400
+    path: ./ruleset/category-ru.mrs
     # proxy: PROXY
-  proxy-domain:
-    behavior: classical
+
+  whitelist:
+    behavior: domain
     type: http
-    format: text
-    url: 'https://YOUR_URL/proxy-domain.list' # change it
-    interval: 1800
-    path: ./ruleset/proxy-domain.txt
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/whitelist.mrs'
+    interval: 86400
+    path: ./ruleset/whitelist.mrs
     # proxy: PROXY
-  local-list-proxy-domain:
-    behavior: classical
-    type: file
-    format: text
-    path: ./lst/local-list-proxy-domain.txt # change it
-  proxy-ip:
-    behavior: classical
+
+  microsoft:
+    behavior: domain
     type: http
-    format: text
-    url: 'https://YOUR_URL/proxy-ip.list' # change it
-    interval: 1800
-    path: ./ruleset/proxy-ip.txt
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/microsoft.mrs'
+    interval: 86400
+    path: ./ruleset/microsoft.mrs
     # proxy: PROXY
-  antifilter-ip:
-    behavior: classical
+
+  apple:
+    behavior: domain
     type: http
-    format: text
-    url: 'https://YOUR_URL/antifilter-ip.list' # change it
-    interval: 43200
-    path: ./ruleset/antifilter-ip.txt
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/apple.mrs'
+    interval: 86400
+    path: ./ruleset/apple.mrs
+    # proxy: PROXY
+
+  google-play:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/google-play.mrs'
+    interval: 86400
+    path: ./ruleset/google-play.mrs
+    # proxy: PROXY
+
+  epicgames:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/epicgames.mrs'
+    interval: 86400
+    path: ./ruleset/epicgames.mrs
+    # proxy: PROXY
+
+  origin:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/origin.mrs'
+    interval: 86400
+    path: ./ruleset/origin.mrs
+    # proxy: PROXY
+
+  riot:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/riot.mrs'
+    interval: 86400
+    path: ./ruleset/riot.mrs
+    # proxy: PROXY
+
+  escapefromtarkov:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/escapefromtarkov.mrs'
+    interval: 86400
+    path: ./ruleset/escapefromtarkov.mrs
+    # proxy: PROXY
+
+  steam:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/steam.mrs'
+    interval: 86400
+    path: ./ruleset/steam.mrs
+    # proxy: PROXY
+
+  twitch:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/twitch.mrs'
+    interval: 86400
+    path: ./ruleset/twitch.mrs
+    # proxy: PROXY
+
+  pinterest:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/pinterest.mrs'
+    interval: 86400
+    path: ./ruleset/pinterest.mrs
+    # proxy: PROXY
+
+  faceit:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/faceit.mrs'
+    interval: 86400
+    path: ./ruleset/faceit.mrs
+    # proxy: PROXY
+
+  private-ips:
+    behavior: ipcidr
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geoip/release/mihomo/private.mrs'
+    interval: 2592000
+    path: ./ruleset/geoip-private.mrs
+    # proxy: PROXY
+
+  direct-ips:
+    behavior: ipcidr
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geoip/release/mihomo/direct.mrs'
+    interval: 86400
+    path: ./ruleset/direct-ips.mrs
+    # proxy: PROXY
+
+  github:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/github.mrs'
+    interval: 86400
+    path: ./ruleset/github.mrs
+    # proxy: PROXY
+
+  twitch-ads:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/twitch-ads.mrs'
+    interval: 86400
+    path: ./ruleset/twitch-ads.mrs
+    # proxy: PROXY
+
+  youtube:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/youtube.mrs'
+    interval: 86400
+    path: ./ruleset/youtube.mrs
+    # proxy: PROXY
+
+  telegram:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/telegram.mrs'
+    interval: 86400
+    path: ./ruleset/telegram.mrs
+    # proxy: PROXY
+
+  win-spy:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/win-spy.mrs'
+    interval: 86400
+    path: ./ruleset/win-spy.mrs
+    # proxy: PROXY
+
+  torrent-domains:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite/release/mihomo/torrent.mrs'
+    interval: 86400
+    path: ./ruleset/torrent-domains.mrs
+    # proxy: PROXY
+
+  roblox-domain:
+    behavior: domain
+    type: http
+    format: mrs
+    url: 'https://raw.githubusercontent.com/blagodaren/blgdrn-rule-sets/main/ruleset/roblox-domain.mrs'
+    interval: 86400
+    path: ./ruleset/roblox-domain.mrs
+    # proxy: PROXY
+
+  roblox-ip:
+    behavior: ipcidr
+    type: http
+    format: mrs
+    url: 'https://raw.githubusercontent.com/blagodaren/blgdrn-rule-sets/main/ruleset/roblox-ip.mrs'
+    interval: 86400
+    path: ./ruleset/roblox-ip.mrs
     # proxy: PROXY
 
 rules:
-  # - SRC-IP-CIDR,192.168.1.101/32,DIRECT # To exclude a specific device on your network
-  # - IP-CIDR,192.168.1.101/32,DIRECT # To exclude a specific device on your network
-  # - SRC-PORT,123,DIRECT # To exclude a specific port on your network
-  # - DST-PORT,123,DIRECT # To exclude a specific port on your network
-  - RULE-SET,direct-domain,DIRECT
-  - RULE-SET,direct-ip,DIRECT
-  - RULE-SET,proxy-domain,PROXY
-  - RULE-SET,local-list-proxy-domain,PROXY
-  - RULE-SET,proxy-ip,PROXY
-  - RULE-SET,antifilter-ip,PROXY
-  - MATCH,DIRECT
+  - RULE-SET,private-ips,DIRECT,no-resolve
+  - IP-CIDR,::/0,REJECT-DROP,no-resolve
+  - RULE-SET,private-domains,DIRECT
+  - RULE-SET,win-spy,REJECT-DROP
+  - RULE-SET,torrent-domains,DIRECT
+  - RULE-SET,google-play,PROXY
+  - RULE-SET,twitch-ads,PROXY
+  - RULE-SET,youtube,📺 Youtube
+  - RULE-SET,telegram,PROXY
+  - RULE-SET,github,PROXY
+  - RULE-SET,roblox-domain,🎮 Games
+  - RULE-SET,roblox-ip,🎮 Games
+  - RULE-SET,epicgames,🎮 Games (not blocked)
+  - RULE-SET,origin,🎮 Games (not blocked)
+  - RULE-SET,riot,🎮 Games (not blocked)
+  - RULE-SET,escapefromtarkov,🎮 Games (not blocked)
+  - RULE-SET,steam,🎮 Games (not blocked)
+  - RULE-SET,faceit,🎮 Games (not blocked)
+  - RULE-SET,twitch,DIRECT
+  - RULE-SET,microsoft,DIRECT
+  - RULE-SET,apple,DIRECT
+  - RULE-SET,pinterest,DIRECT
+  - RULE-SET,category-ru,DIRECT
+  - RULE-SET,whitelist,DIRECT
+  - RULE-SET,direct-ips,DIRECT
+  - MATCH,PROXY

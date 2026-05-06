@@ -26,7 +26,6 @@
                 "/usr/bin/md5sum": [ "exec" ],
                 "/usr/bin/cut": [ "exec" ]
             },
-            "uci": [ "luci" ],
             "ubus": {
                 "file": [ "read", "stat", "exec" ],
                 "service": [ "list" ]
@@ -47,7 +46,6 @@
                 "/bin/chmod": [ "exec" ],
                 "/bin/mkdir": [ "exec" ]
             },
-            "uci": [ "luci" ],
             "ubus": {
                 "file": [ "write", "exec" ]
             }
