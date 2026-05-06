@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       release-description:
-        description: 'Release description shown at top of notes (optional)'
+        description: 'Release description (optional)'
         required: false
         type: string
 
@@ -123,10 +123,11 @@ jobs:
           RELEASE_DESCRIPTION_INPUT: ${{ github.event.inputs.release-description }}
         run: |
           set -euo pipefail
-          release_description="$(printf '%s\n' "${RELEASE_DESCRIPTION_INPUT:-}" | sed '/^[[:space:]]*$/d')"
+          release_description="${RELEASE_DESCRIPTION_INPUT:-}"
+          has_visible_text="$(printf '%s' "$release_description" | tr -d '[:space:]')"
 
           echo "## Release ${{ github.event.inputs.release-tag }}" > release_notes.md
-          if [ -n "$release_description" ]; then
+          if [ -n "$has_visible_text" ]; then
             echo "" >> release_notes.md
             echo "### Description" >> release_notes.md
             printf '%s\n' "$release_description" >> release_notes.md
