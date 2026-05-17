@@ -1,0 +1,148 @@
+# English translation for SSClash
+# Copyright (C) 2024-2025 ZeroChaos
+# This file is distributed under the same license as the package.
+#
+msgid ""
+msgstr ""
+"Language: en\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+### Menu strings ###
+
+msgid "Configuration"
+msgstr "Configuration"
+
+msgid "Settings"
+msgstr "Settings"
+
+msgid "Rulesets"
+msgstr "Rulesets"
+
+msgid "Log"
+msgstr "Log"
+
+### Common strings ###
+
+msgid "Please wait"
+msgstr "Please wait"
+
+msgid "Saving..."
+msgstr "Saving..."
+
+msgid "Deleting..."
+msgstr "Deleting..."
+
+msgid "Creating..."
+msgstr "Creating..."
+
+msgid "Cancel"
+msgstr "Cancel"
+
+msgid "Create"
+msgstr "Create"
+
+msgid "Save"
+msgstr "Save"
+
+msgid "Delete"
+msgstr "Delete"
+
+### Module config.js ###
+
+msgid "Open Dashboard"
+msgstr "Open Dashboard"
+
+msgid "Stop Service"
+msgstr "Stop Service"
+
+msgid "Start Service"
+msgstr "Start Service"
+
+msgid "Clash is running"
+msgstr "Clash is running"
+
+msgid "Clash stopped"
+msgstr "Clash stopped"
+
+msgid "Clash Configuration"
+msgstr "Clash Configuration"
+
+msgid "Your current Clash config. When applied, the changes will be saved and the service will be restarted."
+msgstr "Your current Clash config. When applied, the changes will be saved and the service will be restarted."
+
+msgid "Save & Restart core"
+msgstr "Save & Restart core"
+
+msgid "Save & Reload config"
+msgstr "Save & Reload config"
+
+msgid "More actions"
+msgstr "More actions"
+
+msgid "Unable to start and enable service: %s"
+msgstr "Unable to start and enable service: %s"
+
+msgid "Unable to stop and disable service: %s"
+msgstr "Unable to stop and disable service: %s"
+
+msgid "Popup was blocked. Please allow popups for this site."
+msgstr "Popup was blocked. Please allow popups for this site."
+
+msgid "Service is not running."
+msgstr "Service is not running."
+
+msgid "Error opening dashboard:"
+msgstr "Error opening dashboard:"
+
+msgid "Failed to open dashboard: %s"
+msgstr "Failed to open dashboard: %s"
+
+msgid "Configuration saved successfully."
+msgstr "Configuration saved successfully."
+
+msgid "Configuration test failed — service not reloaded. Please fix the errors below: %s"
+msgstr "Configuration test failed — service not reloaded. Please fix the errors below: %s"
+
+msgid "unknown error"
+msgstr "unknown error"
+
+msgid "Service reloaded successfully."
+msgstr "Service reloaded successfully."
+
+msgid "Unable to save contents: %s"
+msgstr "Unable to save contents: %s"
+
+### Module config.js — Reload config / Restart core ###
+
+msgid "Reload configuration via Mihomo API — active connections are preserved. Firewall rules are NOT rebuilt; use \"Save & Restart core\" when changing external-controller / tproxy-port / tun / fake-ip-filter-mode / proxy mode."
+msgstr "Reload configuration via Mihomo API — active connections are preserved. Firewall rules are NOT rebuilt; use \"Save & Restart core\" when changing external-controller / tproxy-port / tun / fake-ip-filter-mode / proxy mode."
+
+msgid "Full restart: stops and starts the Mihomo core, rebuilds firewall rules and refreshes subscription IPs. Active connections are dropped."
+msgstr "Full restart: stops and starts the Mihomo core, rebuilds firewall rules and refreshes subscription IPs. Active connections are dropped."
+
+msgid "Service is not running — config reload requires a running Mihomo instance. Use \"Save & Restart core\" instead."
+msgstr "Service is not running — config reload requires a running Mihomo instance. Use \"Save & Restart core\" instead."
+
+msgid "Config reload failed (%s, HTTP %s). %s Try \"Save & Restart core\" for a full restart."
+msgstr "Config reload failed (%s, HTTP %s). %s Try \"Save & Restart core\" for a full restart."
+
+msgid "(Hint: the system curl has no HTTPS support. Install curl-ssl, or use plain external-controller for hot reload.)"
+msgstr "(Hint: the system curl has no HTTPS support. Install curl-ssl, or use plain external-controller for hot reload.)"
+
+msgid "Config reloaded, but updating subscription IP cache failed: %s"
+msgstr "Config reloaded, but updating subscription IP cache failed: %s"
+
+msgid "Config reloaded via Mihomo API — active connections preserved."
+msgstr "Config reloaded via Mihomo API — active connections preserved."
+
+msgid "Config reload error: %s. Try \"Save & Restart core\" for a full restart."
+msgstr "Config reload error: %s. Try \"Save & Restart core\" for a full restart."
+
+### Module log.js ###
+
+msgid "--- Log truncated, skipped %d older lines ---"
+msgstr "--- Log truncated, skipped %d older lines ---"
+
+msgid "Error executing logread:"
+msgstr "Error executing logread:"

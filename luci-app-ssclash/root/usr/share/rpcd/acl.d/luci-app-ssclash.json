@@ -28,7 +28,8 @@
             },
             "ubus": {
                 "file": [ "read", "stat", "exec" ],
-                "service": [ "list" ]
+                "service": [ "list" ],
+                "session": [ "access", "login" ]
             }
         },
         "write": {

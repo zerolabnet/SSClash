@@ -16,18 +16,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_$(PKG_NAME)_Iptables_Transparent_Proxy \
 	CONFIG_PACKAGE_$(PKG_NAME)_Nftables_Transparent_Proxy
 
-PKG_BUILD_DEPENDS:=luci-base/host
-
-include $(INCLUDE_DIR)/package.mk
-
-define Package/$(PKG_NAME)
-	SECTION:=luci
-	CATEGORY:=LuCI
-	SUBMENU:=3. Applications
-	TITLE:=$(LUCI_TITLE)
-	DEPENDS:=$(LUCI_DEPENDS)
-	PKGARCH:=$(LUCI_PKGARCH)
-endef
+include $(TOPDIR)/feeds/luci/luci.mk
 
 define Package/$(PKG_NAME)/config
 choice
@@ -46,77 +35,8 @@ config PACKAGE_$(PKG_NAME)_Nftables_Transparent_Proxy
 endchoice
 endef
 
-define Package/$(PKG_NAME)/description
-	LuCI interface for SSClash, a tool for managing and configuring Clash.
-endef
-
-define Build/Prepare
-	# No preparation steps required
-endef
-
-define Build/Compile
-	@mkdir -p $(PKG_BUILD_DIR)/po/ru
-	@if [ -f "./rootfs/po/ru/ssclash.po" ]; then \
-		$(STAGING_DIR_HOSTPKG)/bin/po2lmo \
-			"./rootfs/po/ru/ssclash.po" \
-			"$(PKG_BUILD_DIR)/po/ru/ssclash.lmo"; \
-	fi
-	@mkdir -p $(PKG_BUILD_DIR)/po/zh-cn
-	@if [ -f "./rootfs/po/zh-cn/ssclash.po" ]; then \
-		$(STAGING_DIR_HOSTPKG)/bin/po2lmo \
-			"./rootfs/po/zh-cn/ssclash.po" \
-			"$(PKG_BUILD_DIR)/po/zh-cn/ssclash.lmo"; \
-	fi
-endef
-
 define Package/$(PKG_NAME)/conffiles
 /opt/clash/config.yaml
-endef
-
-define Package/$(PKG_NAME)/install
-	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) ./rootfs/etc/init.d/clash $(1)/etc/init.d/
-
-	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
-	$(INSTALL_BIN) ./rootfs/etc/hotplug.d/iface/40-clash $(1)/etc/hotplug.d/iface/
-	$(INSTALL_DIR) $(1)/etc/hotplug.d/net
-	$(INSTALL_BIN) ./rootfs/etc/hotplug.d/net/99-clash-tun $(1)/etc/hotplug.d/net/
-
-	$(INSTALL_DIR) $(1)/opt/clash/bin
-	$(INSTALL_BIN) ./rootfs/opt/clash/bin/clash-rules $(1)/opt/clash/bin/
-
-	$(INSTALL_DIR) $(1)/opt/clash
-	$(INSTALL_DATA) ./rootfs/opt/clash/config.yaml $(1)/opt/clash/
-
-	$(INSTALL_DIR) $(1)/opt/clash/ui
-	$(CP) ./rootfs/opt/clash/ui/* $(1)/opt/clash/ui/
-
-	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
-	$(INSTALL_DATA) ./rootfs/usr/share/luci/menu.d/luci-app-ssclash.json $(1)/usr/share/luci/menu.d/
-
-	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
-	$(INSTALL_DATA) ./rootfs/usr/share/rpcd/acl.d/luci-app-ssclash.json $(1)/usr/share/rpcd/acl.d/
-
-	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/ssclash
-	$(CP) ./rootfs/www/luci-static/resources/view/ssclash/* $(1)/www/luci-static/resources/view/ssclash/
-
-	$(INSTALL_DIR) $(1)/opt/clash/lst
-
-ifdef CONFIG_USE_APK
-	$(INSTALL_DIR) $(1)/etc/apk/protected_paths.d
-	$(INSTALL_DATA) ./rootfs/etc/apk/protected_paths.d/ssclash.list $(1)/etc/apk/protected_paths.d/
-endif
-
-	@if [ -f "$(PKG_BUILD_DIR)/po/ru/ssclash.lmo" ]; then \
-		$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n; \
-		$(INSTALL_DATA) "$(PKG_BUILD_DIR)/po/ru/ssclash.lmo" \
-			"$(1)/usr/lib/lua/luci/i18n/ssclash.ru.lmo"; \
-	fi
-	@if [ -f "$(PKG_BUILD_DIR)/po/zh-cn/ssclash.lmo" ]; then \
-		$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n; \
-		$(INSTALL_DATA) "$(PKG_BUILD_DIR)/po/zh-cn/ssclash.lmo" \
-			"$(1)/usr/lib/lua/luci/i18n/ssclash.zh-cn.lmo"; \
-	fi
 endef
 
 define Package/$(PKG_NAME)/preinst
@@ -135,8 +55,10 @@ else
 	FIRST_INSTALL=1
 fi
 [ -n "$$IPKG_INSTROOT" ] || {
-	/etc/init.d/rpcd reload
-	rm -f /tmp/luci-*
+	mkdir -p /opt/clash/lst
+	rm -f /tmp/luci-indexcache.*
+	rm -rf /tmp/luci-modulecache/
+	/etc/init.d/rpcd reload 2>/dev/null
 
 	# On first install the default config.yaml is just a usable example
 	# (no real proxies configured). Prevent auto-start on next boot so the
