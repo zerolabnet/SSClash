@@ -3,6 +3,7 @@
 'require fs';
 'require ui';
 'require network';
+'require view.ssclash.utils';
 
 // =============================================================================
 // SECTION: Network interface helpers
@@ -861,7 +862,7 @@ function createKernelDownloadSection() {
 
     const statusContainer = E('div', {
         'id': 'kernel-status',
-        'style': 'margin: 15px 0; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; color: ' + LIGHT_PANEL_TEXT + ';'
+        'style': 'margin: 15px 0; padding: 12px; border: 1px solid ' + PANEL_BORDER + '; border-radius: 4px; background: ' + PANEL_CARD_BG + '; color: ' + PANEL_TEXT + ';'
     });
 
     container.appendChild(statusContainer);
@@ -887,7 +888,7 @@ function createKernelDownloadSection() {
                 statusHTML += `<div style="margin-top: 5px;">📦 ${_('Version')}: ${status.version}</div>`;
             } else {
                 statusHTML += `<div style="color: #dc3545; font-weight: bold;">❌ ${_('Kernel Status')}: ${_('Not Installed')}</div>`;
-                statusHTML += `<div style="margin-top: 5px; color: ${LIGHT_PANEL_MUTED_TEXT};">${_('Mihomo kernel binary not found')}</div>`;
+                statusHTML += `<div style="margin-top: 5px; color: ${PANEL_MUTED_TEXT};">${_('Mihomo kernel binary not found')}</div>`;
             }
 
             statusHTML += `<div style="margin-top: 5px;">🏗️ ${_('System Architecture')}: ${arch}</div>`;
@@ -942,9 +943,21 @@ function createKernelDownloadSection() {
 // SECTION: UI component builders
 // =============================================================================
 
-const LIGHT_PANEL_TEXT = '#1f2937';
-const LIGHT_PANEL_MUTED_TEXT = '#4b5563';
-const LIGHT_PANEL_INPUT_STYLE = 'background: #fff; color: ' + LIGHT_PANEL_TEXT + '; border-color: #93c5fd;';
+let PANEL_TEXT = '#1f2937';
+let PANEL_MUTED_TEXT = '#4b5563';
+let PANEL_INPUT_STYLE = 'background: #fff; color: #1f2937; border-color: #93c5fd;';
+let PANEL_CARD_BG = '#f9f9f9';
+let PANEL_ITEM_BG = 'white';
+let PANEL_SEL_BG = '#f0f8ff';
+let PANEL_AUTO_BG = '#f8fff8';
+let PANEL_CHK_BG = '#e6f3ff';
+let PANEL_BORDER = '#ddd';
+let PANEL_BORDER_ITEM = '#ccc';
+let PANEL_STATUS_BG = '#f8f9fa';
+let PANEL_STATUS_GREEN = '#e8f5e8';
+let PANEL_STATUS_WARN = '#fff3cd';
+let PANEL_STATUS_TEXT_GREEN = '#155724';
+let PANEL_STATUS_TEXT_WARN = '#856404';
 
 function createModeSelector(currentMode) {
     const container = E('div', { 'class': 'cbi-section' });
@@ -961,14 +974,14 @@ function createModeSelector(currentMode) {
 
     const excludeLabel = E('label', {
         'for': 'mode_exclude',
-        'style': 'display: block; padding: 12px; border: 2px solid #ddd; border-radius: 6px; margin-bottom: 10px; cursor: pointer; background: white; color: ' + LIGHT_PANEL_TEXT + ';'
+        'style': 'display: block; padding: 12px; border: 2px solid ' + PANEL_BORDER + '; border-radius: 6px; margin-bottom: 10px; cursor: pointer; background: ' + PANEL_ITEM_BG + '; color: ' + PANEL_TEXT + ';'
     }, [
         E('div', { 'style': 'display: flex; align-items: flex-start; gap: 10px;' }, [
             excludeRadio,
             E('div', {}, [
                 E('strong', { 'style': 'display: block; margin-bottom: 5px;' },
                     '⭕ ' + _('Exclude Mode (Universal approach)')),
-                E('div', { 'style': 'color: ' + LIGHT_PANEL_MUTED_TEXT + '; font-size: 13px; line-height: 1.4;' },
+                E('div', { 'style': 'color: ' + PANEL_MUTED_TEXT + '; font-size: 13px; line-height: 1.4;' },
                     _('Process traffic from ALL interfaces except selected ones. Automatically detects and excludes WAN. Recommended for most users.'))
             ])
         ])
@@ -980,14 +993,14 @@ function createModeSelector(currentMode) {
 
     const explicitLabel = E('label', {
         'for': 'mode_explicit',
-        'style': 'display: block; padding: 12px; border: 2px solid #ddd; border-radius: 6px; cursor: pointer; background: white; color: ' + LIGHT_PANEL_TEXT + ';'
+        'style': 'display: block; padding: 12px; border: 2px solid ' + PANEL_BORDER + '; border-radius: 6px; cursor: pointer; background: ' + PANEL_ITEM_BG + '; color: ' + PANEL_TEXT + ';'
     }, [
         E('div', { 'style': 'display: flex; align-items: flex-start; gap: 10px;' }, [
             explicitRadio,
             E('div', {}, [
                 E('strong', { 'style': 'display: block; margin-bottom: 5px;' },
                     '🎯 ' + _('Explicit Mode (Precise control)')),
-                E('div', { 'style': 'color: ' + LIGHT_PANEL_MUTED_TEXT + '; font-size: 13px; line-height: 1.4;' },
+                E('div', { 'style': 'color: ' + PANEL_MUTED_TEXT + '; font-size: 13px; line-height: 1.4;' },
                     _('Process traffic ONLY from selected interfaces. More secure but requires manual configuration. Recommended for advanced users.'))
             ])
         ])
@@ -1005,18 +1018,18 @@ function createModeSelector(currentMode) {
     function updateLabels() {
         if (excludeRadio.checked) {
             excludeLabel.style.borderColor = '#0066cc';
-            excludeLabel.style.backgroundColor = '#f0f8ff';
-            excludeLabel.style.color = LIGHT_PANEL_TEXT;
-            explicitLabel.style.borderColor = '#ddd';
-            explicitLabel.style.backgroundColor = 'white';
-            explicitLabel.style.color = LIGHT_PANEL_TEXT;
+            excludeLabel.style.backgroundColor = PANEL_SEL_BG;
+            excludeLabel.style.color = PANEL_TEXT;
+            explicitLabel.style.borderColor = PANEL_BORDER;
+            explicitLabel.style.backgroundColor = PANEL_ITEM_BG;
+            explicitLabel.style.color = PANEL_TEXT;
         } else if (explicitRadio.checked) {
             explicitLabel.style.borderColor = '#0066cc';
-            explicitLabel.style.backgroundColor = '#f0f8ff';
-            explicitLabel.style.color = LIGHT_PANEL_TEXT;
-            excludeLabel.style.borderColor = '#ddd';
-            excludeLabel.style.backgroundColor = 'white';
-            excludeLabel.style.color = LIGHT_PANEL_TEXT;
+            explicitLabel.style.backgroundColor = PANEL_SEL_BG;
+            explicitLabel.style.color = PANEL_TEXT;
+            excludeLabel.style.borderColor = PANEL_BORDER;
+            excludeLabel.style.backgroundColor = PANEL_ITEM_BG;
+            excludeLabel.style.color = PANEL_TEXT;
         }
     }
 
@@ -1051,7 +1064,7 @@ function createProxyModeSection(currentProxyMode) {
 
     const hint = E('div', {
         'id': 'proxy-mode-hint',
-        'style': 'margin-top: 8px; padding: 10px; border-left: 3px solid #777; border-radius: 3px; font-size: 12px; background: #f9f9f9; color: ' + LIGHT_PANEL_TEXT + ';'
+        'style': 'margin-top: 8px; padding: 10px; border-left: 3px solid #777; border-radius: 3px; font-size: 12px; background: ' + PANEL_CARD_BG + '; color: ' + PANEL_TEXT + ';'
     });
 
     function updateHint() {
@@ -1115,7 +1128,7 @@ function createTunStackSection(currentTunStack) {
 
     const hint = E('div', {
         'id': 'tun-stack-hint',
-        'style': 'margin-top: 8px; padding: 8px; background: #f9f9f9; border-left: 3px solid #777; border-radius: 3px; font-size: 12px; color: ' + LIGHT_PANEL_TEXT + ';'
+        'style': 'margin-top: 8px; padding: 8px; background: ' + PANEL_CARD_BG + '; border-left: 3px solid #777; border-radius: 3px; font-size: 12px; color: ' + PANEL_TEXT + ';'
     });
 
     function updateHint() {
@@ -1165,7 +1178,7 @@ function createAutoDetectOptions(currentMode, autoDetectLan, autoDetectWan) {
 
     const autoDetectLanLabel = E('label', {
         'for': 'auto_detect_lan',
-        'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; color: ' + LIGHT_PANEL_TEXT + '; cursor: pointer;'
+        'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid ' + PANEL_BORDER + '; border-radius: 4px; background: ' + PANEL_CARD_BG + '; color: ' + PANEL_TEXT + '; cursor: pointer;'
     }, [
         autoDetectLanCheckbox,
         E('span', '🔍 ' + _('Automatically detect LAN bridge interface'))
@@ -1187,7 +1200,7 @@ function createAutoDetectOptions(currentMode, autoDetectLan, autoDetectWan) {
 
     const autoDetectWanLabel = E('label', {
         'for': 'auto_detect_wan',
-        'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; color: ' + LIGHT_PANEL_TEXT + '; cursor: pointer;'
+        'style': 'display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid ' + PANEL_BORDER + '; border-radius: 4px; background: ' + PANEL_CARD_BG + '; color: ' + PANEL_TEXT + '; cursor: pointer;'
     }, [
         autoDetectWanCheckbox,
         E('span', '🔍 ' + _('Automatically detect WAN interface'))
@@ -1218,9 +1231,9 @@ function createAutoDetectOptions(currentMode, autoDetectLan, autoDetectWan) {
                 if (checkbox && checkbox.checked) {
                     checkbox.checked = false;
                     const label = checkbox.nextElementSibling;
-                    label.style.borderColor = '#ccc';
-                    label.style.backgroundColor = 'white';
-                    label.style.color = LIGHT_PANEL_TEXT;
+                    label.style.borderColor = PANEL_BORDER_ITEM;
+                    label.style.backgroundColor = PANEL_ITEM_BG;
+                    label.style.color = PANEL_TEXT;
 
                     const autoIndicator = label.querySelector('.auto-indicator');
                     if (autoIndicator) {
@@ -1285,16 +1298,16 @@ function createInterfaceSelector(interfaces, selectedInterfaces, currentMode) {
         const isAutoDetected = ifaceName === detectedInterface;
         if (isAutoDetected) {
             label.style.borderColor = '#28a745';
-            label.style.backgroundColor = '#f8fff8';
-            label.style.color = LIGHT_PANEL_TEXT;
+            label.style.backgroundColor = PANEL_AUTO_BG;
+            label.style.color = PANEL_TEXT;
         } else if (checkbox.checked) {
             label.style.borderColor = '#0066cc';
-            label.style.backgroundColor = '#e6f3ff';
-            label.style.color = LIGHT_PANEL_TEXT;
+            label.style.backgroundColor = PANEL_CHK_BG;
+            label.style.color = PANEL_TEXT;
         } else {
-            label.style.borderColor = '#ccc';
-            label.style.backgroundColor = 'white';
-            label.style.color = LIGHT_PANEL_TEXT;
+            label.style.borderColor = PANEL_BORDER_ITEM;
+            label.style.backgroundColor = PANEL_ITEM_BG;
+            label.style.color = PANEL_TEXT;
         }
     }
 
@@ -1309,11 +1322,11 @@ function createInterfaceSelector(interfaces, selectedInterfaces, currentMode) {
 
             const groupContainer = E('div', {
                 'class': 'cbi-section',
-                'style': 'margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px; padding: 0 8px 8px 8px; background-color: #f9f9f9; color: ' + LIGHT_PANEL_TEXT + ';'
+                'style': 'margin-bottom: 5px; border: 1px solid ' + PANEL_BORDER + '; border-radius: 4px; padding: 0 8px 8px 8px; background-color: ' + PANEL_CARD_BG + '; color: ' + PANEL_TEXT + ';'
             });
 
             const groupTitle = E('h4', {
-                'style': 'color: ' + LIGHT_PANEL_TEXT + '; font-size: 13px;'
+                'style': 'color: ' + PANEL_TEXT + '; font-size: 13px;'
             }, categoryNames[category] || category);
 
             groupContainer.appendChild(groupTitle);
@@ -1333,7 +1346,7 @@ function createInterfaceSelector(interfaces, selectedInterfaces, currentMode) {
 
                 const label = E('label', {
                     'for': 'iface_' + iface.name,
-                    'style': 'display: flex; align-items: center; padding: 6px 6px 6px 24px; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; background-color: white; color: ' + LIGHT_PANEL_TEXT + '; transition: all 0.15s ease; font-size: 13px; min-height: 32px; position: relative; line-height: 1.2;'
+                    'style': 'display: flex; align-items: center; padding: 6px 6px 6px 24px; border: 1px solid ' + PANEL_BORDER_ITEM + '; border-radius: 3px; cursor: pointer; background-color: ' + PANEL_ITEM_BG + '; color: ' + PANEL_TEXT + '; transition: all 0.15s ease; font-size: 13px; min-height: 32px; position: relative; line-height: 1.2;'
                 }, [
                     E('span', { 'style': 'margin-right: 6px; font-size: 14px; flex-shrink: 0;' }, iface.icon),
                     E('span', { 'style': 'font-weight: 500; flex-grow: 1;' }, iface.description)
@@ -1358,10 +1371,10 @@ function createInterfaceSelector(interfaces, selectedInterfaces, currentMode) {
 
                 label.addEventListener('mouseover', function() {
                     if (iface.name === detectedInterface) {
-                        this.style.backgroundColor = '#f0fff0';
+                        this.style.backgroundColor = PANEL_AUTO_BG;
                     } else if (!checkbox.checked) {
                         this.style.borderColor = '#0066cc';
-                        this.style.backgroundColor = '#f0f8ff';
+                        this.style.backgroundColor = PANEL_SEL_BG;
                     }
                 });
 
@@ -1390,9 +1403,9 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
         'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px 14px; margin: 15px 0;'
     });
 
-    const cardStyle = 'display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; color: ' + LIGHT_PANEL_TEXT + '; cursor: pointer;';
+    const cardStyle = 'display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid ' + PANEL_BORDER + '; border-radius: 4px; background: ' + PANEL_CARD_BG + '; color: ' + PANEL_TEXT + '; cursor: pointer;';
     const cardHeaderStyle = 'display: flex; align-items: center; gap: 8px;';
-    const cardDescStyle = 'font-size: 11px; color: ' + LIGHT_PANEL_MUTED_TEXT + '; line-height: 1.35;';
+    const cardDescStyle = 'font-size: 11px; color: ' + PANEL_MUTED_TEXT + '; line-height: 1.35;';
 
     const blockQuicCheckbox = E('input', {
         'type': 'checkbox',
@@ -1458,7 +1471,7 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
 
     const hwidAdvancedContainer = E('div', {
         'id': 'hwid_advanced',
-        'style': 'display: none; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; color: ' + LIGHT_PANEL_TEXT + '; margin-top: 10px;'
+        'style': 'display: none; padding: 10px 12px; border: 1px solid ' + PANEL_BORDER + '; border-radius: 4px; background: ' + PANEL_ITEM_BG + '; color: ' + PANEL_TEXT + '; margin-top: 10px;'
     });
 
     const hwidFieldsGrid = E('div', {
@@ -1475,7 +1488,7 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
                 'class': 'cbi-input-text',
                 'value': hwidUserAgent || 'SSClash',
                 'placeholder': 'SSClash',
-                'style': LIGHT_PANEL_INPUT_STYLE
+                'style': PANEL_INPUT_STYLE
             })
         ]),
         E('div', {}, [
@@ -1489,13 +1502,13 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
                 'class': 'cbi-input-text',
                 'value': hwidDeviceOS || 'OpenWrt',
                 'placeholder': 'OpenWrt',
-                'style': LIGHT_PANEL_INPUT_STYLE
+                'style': PANEL_INPUT_STYLE
             })
         ])
     ]);
 
     const hwidHint = E('div', {
-        'style': 'font-size: 11px; color: ' + LIGHT_PANEL_MUTED_TEXT + '; margin-top: 8px;'
+        'style': 'font-size: 11px; color: ' + PANEL_MUTED_TEXT + '; margin-top: 8px;'
     }, _('Values sent in HTTP headers of proxy-provider requests (User-Agent / x-device-os).'));
 
     hwidAdvancedContainer.appendChild(hwidFieldsGrid);
@@ -1533,9 +1546,9 @@ async function updateInterfaceCheckboxes(newMode) {
         checkboxes.forEach(function(cb) {
             cb.checked = false;
             const label = cb.nextElementSibling;
-            label.style.borderColor = '#ccc';
-            label.style.backgroundColor = 'white';
-            label.style.color = LIGHT_PANEL_TEXT;
+            label.style.borderColor = PANEL_BORDER_ITEM;
+            label.style.backgroundColor = PANEL_ITEM_BG;
+            label.style.color = PANEL_TEXT;
 
             const autoIndicator = label.querySelector('.auto-indicator');
             if (autoIndicator) {
@@ -1551,8 +1564,8 @@ async function updateInterfaceCheckboxes(newMode) {
 
                 if (autoDetectEnabled && ifaceName === detectedInterface) {
                     label.style.borderColor = '#28a745';
-                    label.style.backgroundColor = '#f8fff8';
-                    label.style.color = LIGHT_PANEL_TEXT;
+                    label.style.backgroundColor = PANEL_AUTO_BG;
+                    label.style.color = PANEL_TEXT;
 
                     const autoIndicator = E('span', {
                         'class': 'auto-indicator',
@@ -1561,8 +1574,8 @@ async function updateInterfaceCheckboxes(newMode) {
                     label.appendChild(autoIndicator);
                 } else {
                     label.style.borderColor = '#0066cc';
-                    label.style.backgroundColor = '#e6f3ff';
-                    label.style.color = LIGHT_PANEL_TEXT;
+                    label.style.backgroundColor = PANEL_CHK_BG;
+                    label.style.color = PANEL_TEXT;
                 }
             }
         });
@@ -1608,6 +1621,25 @@ return view.extend({
 
     render: async function(data) {
         const [interfaces, settings] = data;
+
+        if (!view_ssclash_utils.isLightTheme()) {
+            PANEL_TEXT = 'inherit';
+            PANEL_MUTED_TEXT = 'rgba(255,255,255,0.55)';
+            PANEL_INPUT_STYLE = 'color: inherit; border-color: rgba(255,255,255,0.25);';
+            PANEL_CARD_BG = 'rgba(255,255,255,0.05)';
+            PANEL_ITEM_BG = 'rgba(255,255,255,0.04)';
+            PANEL_SEL_BG = 'rgba(0,102,204,0.2)';
+            PANEL_AUTO_BG = 'rgba(40,167,69,0.15)';
+            PANEL_CHK_BG = 'rgba(0,102,204,0.25)';
+            PANEL_BORDER = 'rgba(255,255,255,0.15)';
+            PANEL_BORDER_ITEM = 'rgba(255,255,255,0.1)';
+            PANEL_STATUS_BG = 'rgba(0,102,204,0.08)';
+            PANEL_STATUS_GREEN = 'rgba(40,167,69,0.1)';
+            PANEL_STATUS_WARN = 'rgba(255,193,7,0.12)';
+            PANEL_STATUS_TEXT_GREEN = '#75b798';
+            PANEL_STATUS_TEXT_WARN = '#ffc107';
+        }
+
         const selectedInterfaces = await loadInterfacesByMode(settings.mode);
 
         let detectedLanBridge = null;
@@ -1696,9 +1728,9 @@ return view.extend({
         ]);
 
         const kernelInfoSection = E('div', {
-            'style': 'margin: 10px 0 20px 0; padding: 8px 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; font-size: 12px;'
+            'style': 'margin: 10px 0 20px 0; padding: 8px 12px; background: ' + PANEL_STATUS_WARN + '; border-left: 4px solid #ffc107; border-radius: 4px; font-size: 12px;'
         }, [
-            E('span', { 'style': 'color: #856404; font-weight: bold;' }, '⚠️ ' + _('Restart Clash service after installing or updating the kernel'))
+            E('span', { 'style': 'color: ' + PANEL_STATUS_TEXT_WARN + '; font-weight: bold;' }, '⚠️ ' + _('Restart Clash service after installing or updating the kernel'))
         ]);
 
         const modeRadios = modeSelector.querySelectorAll('input[name="interface_mode"]');
@@ -1784,9 +1816,9 @@ return view.extend({
                 checkboxes.forEach(function(cb) {
                     cb.checked = false;
                     const label = cb.nextElementSibling;
-                    label.style.borderColor = '#ccc';
-                    label.style.backgroundColor = 'white';
-                    label.style.color = LIGHT_PANEL_TEXT;
+                    label.style.borderColor = PANEL_BORDER_ITEM;
+                    label.style.backgroundColor = PANEL_ITEM_BG;
+                    label.style.color = PANEL_TEXT;
                 });
             }
         }, _('Clear All Interfaces'));
@@ -1809,12 +1841,12 @@ return view.extend({
                         const label = cb.nextElementSibling;
                         if (cb.checked) {
                             label.style.borderColor = '#0066cc';
-                            label.style.backgroundColor = '#e6f3ff';
-                            label.style.color = LIGHT_PANEL_TEXT;
+                            label.style.backgroundColor = PANEL_CHK_BG;
+                            label.style.color = PANEL_TEXT;
                         } else {
-                            label.style.borderColor = '#ccc';
-                            label.style.backgroundColor = 'white';
-                            label.style.color = LIGHT_PANEL_TEXT;
+                            label.style.borderColor = PANEL_BORDER_ITEM;
+                            label.style.backgroundColor = PANEL_ITEM_BG;
+                            label.style.color = PANEL_TEXT;
                         }
                     });
 
@@ -1829,8 +1861,8 @@ return view.extend({
                             if (detectedCheckbox) {
                                 const detectedLabel = detectedCheckbox.nextElementSibling;
                                 detectedLabel.style.borderColor = '#28a745';
-                                detectedLabel.style.backgroundColor = '#f8fff8';
-                                detectedLabel.style.color = LIGHT_PANEL_TEXT;
+                                detectedLabel.style.backgroundColor = PANEL_AUTO_BG;
+                                detectedLabel.style.color = PANEL_TEXT;
 
                                 const existingIndicator = detectedLabel.querySelector('.auto-indicator');
                                 if (!existingIndicator) {
@@ -1851,12 +1883,12 @@ return view.extend({
                                 }
                                 if (detectedCheckbox.checked) {
                                     detectedLabel.style.borderColor = '#0066cc';
-                                    detectedLabel.style.backgroundColor = '#e6f3ff';
-                                    detectedLabel.style.color = LIGHT_PANEL_TEXT;
+                                    detectedLabel.style.backgroundColor = PANEL_CHK_BG;
+                                    detectedLabel.style.color = PANEL_TEXT;
                                 } else {
-                                    detectedLabel.style.borderColor = '#ccc';
-                                    detectedLabel.style.backgroundColor = 'white';
-                                    detectedLabel.style.color = LIGHT_PANEL_TEXT;
+                                    detectedLabel.style.borderColor = PANEL_BORDER_ITEM;
+                                    detectedLabel.style.backgroundColor = PANEL_ITEM_BG;
+                                    detectedLabel.style.color = PANEL_TEXT;
                                 }
                             }
                         }
@@ -1947,10 +1979,10 @@ return view.extend({
 
         const statusSection = E('div', {
             'class': 'cbi-section',
-            'style': 'margin: 20px 0; padding: 0; border: 1px solid #ddd; border-radius: 6px; overflow: hidden; font-size: 12px;'
+            'style': 'margin: 20px 0; padding: 0; border: 1px solid ' + PANEL_BORDER + '; border-radius: 6px; overflow: hidden; font-size: 12px;'
         }, [
             E('div', {
-                'style': 'padding: 8px 12px; background: #f8f9fa; border-left: 4px solid #0066cc;'
+                'style': 'padding: 8px 12px; background: ' + PANEL_STATUS_BG + '; border-left: 4px solid #0066cc;'
             }, [
                 E('span', { 'style': 'color: #0066cc;' }, '📋 '),
                 E('span', {
@@ -1959,17 +1991,17 @@ return view.extend({
                 })
             ]),
             E('div', {
-                'style': 'padding: 8px 12px; background: #e8f5e8; border-left: 4px solid #28a745; border-top: 1px solid #ddd;'
+                'style': 'padding: 8px 12px; background: ' + PANEL_STATUS_GREEN + '; border-left: 4px solid #28a745; border-top: 1px solid ' + PANEL_BORDER + ';'
             }, [
                 E('span', {
                     'id': 'detection-info',
-                    'style': 'color: #155724;'
+                    'style': 'color: ' + PANEL_STATUS_TEXT_GREEN + ';'
                 })
             ]),
             E('div', {
-                'style': 'padding: 8px 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-top: 1px solid #ddd;'
+                'style': 'padding: 8px 12px; background: ' + PANEL_STATUS_WARN + '; border-left: 4px solid #ffc107; border-top: 1px solid ' + PANEL_BORDER + ';'
             }, [
-                E('span', { 'style': 'color: #856404; font-weight: bold;' }, '⚠️ ' + _('Restart Clash service after saving changes'))
+                E('span', { 'style': 'color: ' + PANEL_STATUS_TEXT_WARN + '; font-weight: bold;' }, '⚠️ ' + _('Restart Clash service after saving changes'))
             ])
         ]);
 

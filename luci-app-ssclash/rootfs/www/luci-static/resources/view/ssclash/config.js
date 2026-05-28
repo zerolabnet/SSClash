@@ -3,6 +3,7 @@
 'require fs';
 'require ui';
 'require rpc';
+'require view.ssclash.utils';
 
 let startStopButton = null;
 let editor = null;
@@ -341,14 +342,17 @@ return view.extend({
             }
         };
 
+        const _light = view_ssclash_utils.isLightTheme();
         const splitMenu = E('div', {
             'class': 'ssclash-split-menu',
-            'style': 'position: absolute; top: 100%; right: 0; display: none; min-width: 220px; margin-top: 3px; background: #fff; color: #333; border: 1px solid rgba(0,0,0,0.2); border-radius: 3px; box-shadow: 0 3px 8px rgba(0,0,0,0.2); z-index: 1000;'
+            'style': _light
+                ? 'position: absolute; top: 100%; right: 0; display: none; min-width: 220px; margin-top: 3px; background: #fff; color: #333; border: 1px solid rgba(0,0,0,0.2); border-radius: 3px; box-shadow: 0 3px 8px rgba(0,0,0,0.2); z-index: 1000;'
+                : 'position: absolute; top: 100%; right: 0; display: none; min-width: 220px; margin-top: 3px; background: #2b2b2b; color: #e0e0e0; border: 1px solid rgba(255,255,255,0.15); border-radius: 3px; box-shadow: 0 3px 8px rgba(0,0,0,0.5); z-index: 1000;'
         }, [
             E('button', {
                 'class': 'btn',
                 'click': function() { splitMenu.style.display = 'none'; saveAndRestartCore(); },
-                'style': 'display: block; width: 100%; text-align: left; margin: 0; border: 0; border-radius: 0; background: transparent; padding: 8px 14px;',
+                'style': 'display: block; width: 100%; text-align: left; margin: 0; border: 0; border-radius: 0; background: transparent; padding: 8px 14px;' + (_light ? '' : ' color: #e0e0e0;'),
                 'title': _('Full restart: stops and starts the Mihomo core, rebuilds firewall rules and refreshes subscription IPs. Active connections are dropped.')
             }, _('Save & Restart core'))
         ]);

@@ -2,6 +2,7 @@
 'require view';
 'require fs';
 'require ui';
+'require view.ssclash.utils';
 
 const editors = {};
 const rulesetPath = '/opt/clash/lst/';
@@ -264,6 +265,14 @@ return view.extend({
     render: function(data) {
         const { isWhitelistMode, whitelistContent, rulesets } = data || { isWhitelistMode: false, whitelistContent: '', rulesets: [] };
 
+        const _light = view_ssclash_utils.isLightTheme();
+        const rulesetCardStyle = _light
+            ? 'padding: 10px 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; margin: 15px 0;'
+            : 'padding: 10px 15px; border: 1px solid rgba(255,255,255,0.15); border-radius: 5px; background-color: rgba(255,255,255,0.05); margin: 15px 0;';
+        const whitelistCardStyle = _light
+            ? 'padding: 10px 15px; border: 2px solid #0066cc; border-radius: 5px; background-color: #f0f8ff; margin: 15px 0;'
+            : 'padding: 10px 15px; border: 2px solid #0066cc; border-radius: 5px; background-color: rgba(0,102,204,0.1); margin: 15px 0;';
+
         const sections = rulesets.map(ruleset => {
             const filename = ruleset.name;
 
@@ -300,7 +309,7 @@ return view.extend({
                 E('div', { 'style': 'text-align: center;' }, [saveButton, deleteButton])
             ]);
 
-            return E('div', { 'style': 'padding: 10px 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; margin: 15px 0;' }, [
+            return E('div', { 'style': rulesetCardStyle }, [
                 header,
                 content
             ]);
@@ -316,7 +325,7 @@ return view.extend({
             const editorId = `editor-${FAKEIP_WHITELIST_FILENAME}`;
 
             const whitelistBlock = E('div', {
-                'style': 'padding: 10px 15px; border: 2px solid #0066cc; border-radius: 5px; background-color: #f0f8ff; margin: 15px 0;'
+                'style': whitelistCardStyle
             }, [
                 E('div', { 'style': 'display: flex; align-items: center; margin-bottom: 8px;' }, [
                     E('span', {
