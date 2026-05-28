@@ -586,8 +586,8 @@ msgstr "АВТО"
 msgid "Store rules and proxy providers in RAM (tmpfs)"
 msgstr "Хранить правила и proxy-providers в RAM (tmpfs)"
 
-msgid "When enabled, rulesets and proxy-providers directories are placed on tmpfs for faster access (at the cost of using RAM). Disable to keep them on persistent storage."
-msgstr "Если включено, каталоги rulesets и proxy-providers размещаются в tmpfs для более быстрого доступа (за счёт использования оперативной памяти). Отключите, чтобы хранить их на постоянном носителе."
+msgid "When enabled, rulesets and proxy-providers directories are placed on tmpfs to extend the lifespan of the NAND chip (at the cost of using RAM). Disable to keep them on persistent storage."
+msgstr "Если включено, каталоги rulesets и proxy-providers размещаются в tmpfs для сохранения ресурса NAND-чипа (за счёт использования оперативной памяти). Отключите, чтобы хранить их на постоянном носителе."
 
 ### HWID-заголовки ###
 

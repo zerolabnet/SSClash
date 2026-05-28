@@ -1440,7 +1440,7 @@ function createAdditionalSettings(blockQuic, useTmpfsRules, enableHwid, hwidUser
             E('span', '💾 ' + _('Store rules and proxy providers in RAM (tmpfs)'))
         ]),
         E('span', { 'style': cardDescStyle },
-            _('When enabled, rulesets and proxy-providers directories are placed on tmpfs for faster access (at the cost of using RAM). Disable to keep them on persistent storage.'))
+            _('When enabled, rulesets and proxy-providers directories are placed on tmpfs to extend the lifespan of the NAND chip (at the cost of using RAM). Disable to keep them on persistent storage.'))
     ]);
 
     settingsContainer.appendChild(tmpfsLabel);

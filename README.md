@@ -54,12 +54,12 @@ Download the SSClash package and install it.
 
 ```bash
 # OpenWrt >= 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.1/luci-app-ssclash-4.5.1-r1.apk -o /tmp/luci-app-ssclash-4.5.1-r1.apk
-apk add --allow-untrusted /tmp/luci-app-ssclash-4.5.1-r1.apk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.2/luci-app-ssclash-4.5.2-r1.apk -o /tmp/luci-app-ssclash-4.5.2-r1.apk
+apk add --allow-untrusted /tmp/luci-app-ssclash-4.5.2-r1.apk
 
 # OpenWrt < 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.1/luci-app-ssclash_4.5.1-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.1-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_4.5.1-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.2/luci-app-ssclash_4.5.2-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.2-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_4.5.2-r1_all.ipk
 
 rm /tmp/*.ipk /tmp/*.apk
 ```
@@ -131,6 +131,8 @@ SSClash offers two interface processing modes:
 ### Additional Settings:
 
 - **Block QUIC traffic**: Blocks UDP port 443 to improve proxy effectiveness for services like YouTube
+- **Store rules and proxy providers in RAM**: rulesets and proxy-providers directories are placed on tmpfs to extend the lifespan of the NAND chip
+- **Add HWID headers to subscriptions**: Automatically adds HWID headers to proxy-providers (Remnawave compatibility)
 
 <p align="center">
  <img src=".github/assets/images/screenshots/scr-01.png" width="100%">
@@ -143,7 +145,6 @@ Edit your Clash configuration with the built-in editor featuring:
 - **Syntax highlighting** for YAML files
 - **Live service control** (Start/Stop/Restart)
 - **Service status indicator**
-- **Save & Apply** functionality with automatic service reload
 
 <p align="center">
  <img src=".github/assets/images/screenshots/scr-02.png" width="100%">
@@ -154,9 +155,7 @@ Edit your Clash configuration with the built-in editor featuring:
 Create and manage local rule files for use with `rule-providers`:
 
 - **Create custom rule lists** with validation
-- **Edit existing rulesets** with syntax highlighting
 - **Organized file management** with collapsible sections
-- **Usage**: Reference in config as `type: file, format: text, path: ./lst/your_list.txt`
 
 <p align="center">
  <img src=".github/assets/images/screenshots/scr-03.png" width="100%">

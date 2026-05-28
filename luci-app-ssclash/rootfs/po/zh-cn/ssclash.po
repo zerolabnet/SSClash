@@ -572,8 +572,8 @@ msgstr "自动"
 msgid "Store rules and proxy providers in RAM (tmpfs)"
 msgstr "将规则和代理提供者存储在内存中（tmpfs）"
 
-msgid "When enabled, rulesets and proxy-providers directories are placed on tmpfs for faster access (at the cost of using RAM). Disable to keep them on persistent storage."
-msgstr "启用后，rulesets 和 proxy-providers 目录会放到 tmpfs 中以加快访问速度（会占用内存）。禁用后保留在持久存储中。"
+msgid "When enabled, rulesets and proxy-providers directories are placed on tmpfs to extend the lifespan of the NAND chip (at the cost of using RAM). Disable to keep them on persistent storage."
+msgstr "启用后，rulesets 和 proxy-providers 目录将存储在 tmpfs 中，以延长 NAND 芯片的使用寿命（会占用内存）。禁用后将保留在持久存储中。"
 
 msgid "Add HWID headers to subscriptions"
 msgstr "为订阅添加 HWID 请求头"

@@ -52,12 +52,12 @@ opkg install iptables-mod-tproxy
 
 ```bash
 # OpenWrt >= 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.1/luci-app-ssclash-4.5.1-r1.apk -o /tmp/luci-app-ssclash-4.5.1-r1.apk
-apk add --allow-untrusted /tmp/luci-app-ssclash-4.5.1-r1.apk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.2/luci-app-ssclash-4.5.2-r1.apk -o /tmp/luci-app-ssclash-4.5.2-r1.apk
+apk add --allow-untrusted /tmp/luci-app-ssclash-4.5.2-r1.apk
 
 # OpenWrt < 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.1/luci-app-ssclash_4.5.1-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.1-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_4.5.1-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.5.2/luci-app-ssclash_4.5.2-r1_all.ipk -o /tmp/luci-app-ssclash_4.5.2-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_4.5.2-r1_all.ipk
 
 rm /tmp/*.ipk /tmp/*.apk
 ```
@@ -132,6 +132,8 @@ SSClash предлагает два режима обработки интерф
 ### Дополнительные настройки:
 
 * **Блокировать QUIC-трафик**: Блокирует UDP-порт 443 для повышения эффективности прокси для таких сервисов, как YouTube
+- **Хранить правила и proxy-providers в RAM**: Каталоги rulesets и proxy-providers размещаются в tmpfs для сохранения ресурса NAND-чипа
+- **Добавить HWID-заголовки к подпискам**: Автоматическое добавление HWID-заголовков к proxy-providers (совместимость с Remnawave)
 
 <p align="center">
  <img src=".github/assets/images/screenshots/scr-01.png" width="100%">
@@ -144,7 +146,6 @@ SSClash предлагает два режима обработки интерф
 * **Подсветку синтаксиса** для YAML-файлов
 * **Управление службой в реальном времени** (Запуск/Остановка/Перезапуск)
 * **Индикатор состояния службы**
-* Функциональность **Сохранить и применить** с автоматической перезагрузкой службы
 
 <p align="center">
  <img src=".github/assets/images/screenshots/scr-02.png" width="100%">
@@ -155,9 +156,7 @@ SSClash предлагает два режима обработки интерф
 Создавайте и управляйте локальными файлами правил для использования с `rule-providers`:
 
 * **Создание пользовательских списков правил** с проверкой
-* **Редактирование существующих наборов правил** с подсветкой синтаксиса
 * **Организованное управление файлами** со сворачиваемыми разделами
-* **Использование**: Ссылка в конфигурации как `type: file, format: text, path: ./lst/your_list.txt`
 
 <p align="center">
  <img src=".github/assets/images/screenshots/scr-03.png" width="100%">
