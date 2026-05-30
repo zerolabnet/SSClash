@@ -9,6 +9,16 @@
 
 # Setup Guide
 
+# Autoinstall script
+
+Installs or updates all dependencies, luci-app-ssclash and Mihomo core.
+
+```bash
+wget --no-proxy -qO- https://github.com/zerolabnet/ssclash/install-ssclash.sh | sh
+```
+
+# Manual install
+
 ## Step 1: Update Package List
 
 Update the package list to ensure you have the latest available versions.
