@@ -14,7 +14,7 @@
 Installs or updates all dependencies, luci-app-ssclash and Mihomo core.
 
 ```bash
-wget --no-proxy -qO- https://github.com/zerolabnet/ssclash/install-ssclash.sh | sh
+wget --no-proxy -qO- https://github.com/zerolabnet/SSClash/raw/refs/heads/main/install-ssclash.sh | ash
 ```
 
 # Manual install

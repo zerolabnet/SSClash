@@ -11,7 +11,7 @@
 Устанавливает или обновляет все зависимости, luci-app-ssclash и актуальное ядро Mihomo.
 
 ```bash
-wget --no-proxy -qO- https://github.com/zerolabnet/ssclash/install-ssclash.sh | sh
+wget --no-proxy -qO- https://github.com/zerolabnet/SSClash/raw/refs/heads/main/install-ssclash.sh | ash
 ```
 
 ## Установка вручную
