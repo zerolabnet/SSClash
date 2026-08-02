@@ -154,7 +154,7 @@ async function initializeAceEditor(content) {
 // =============================================================================
 
 // Keep in sync with luci-app-ssclash/Makefile PKG_VERSION
-const SSCLASH_VERSION = '4.7.0';
+const SSCLASH_VERSION = '4.7.1';
 
 const SSCLASH_REPO = 'zerolabnet/SSClash';
 const SSCLASH_RELEASES_URL = 'https://github.com/' + SSCLASH_REPO + '/releases';

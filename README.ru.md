@@ -1,3 +1,10 @@
+📖 Read this in other languages:
+- [English](README.md)
+
+> **Основная разработка теперь ведётся в [SSClash-Go](https://github.com/zerolabnet/SSClash-Go).**  
+> Для новых установок рекомендуется Go-редакция (один статический бинарник, встроенный веб-интерфейс, тот же каталог `/opt/clash` и набор возможностей).  
+> Этот репозиторий — legacy **LuCI-приложение** (`luci-app-ssclash`) для OpenWrt; здесь по-прежнему выходят релизы с исправлениями, а новые функции — в SSClash-Go.
+
 <p align="center">
  <img src=".github/assets/images/logos/SSClash.png" width="200">
 </p>
@@ -62,12 +69,12 @@ opkg install iptables-mod-tproxy
 
 ```bash
 # OpenWrt >= 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.7.0/luci-app-ssclash-4.7.0-r1.apk -o /tmp/luci-app-ssclash-4.7.0-r1.apk
-apk add --allow-untrusted /tmp/luci-app-ssclash-4.7.0-r1.apk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.7.1/luci-app-ssclash-4.7.1-r1.apk -o /tmp/luci-app-ssclash-4.7.1-r1.apk
+apk add --allow-untrusted /tmp/luci-app-ssclash-4.7.1-r1.apk
 
 # OpenWrt < 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.7.0/luci-app-ssclash_4.7.0-r1_all.ipk -o /tmp/luci-app-ssclash_4.7.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_4.7.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.7.1/luci-app-ssclash_4.7.1-r1_all.ipk -o /tmp/luci-app-ssclash_4.7.1-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_4.7.1-r1_all.ipk
 
 rm /tmp/*.ipk /tmp/*.apk
 ```

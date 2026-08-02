@@ -1,6 +1,10 @@
 📖 Read this in other languages:
 - [Русский](README.ru.md)
 
+> **Active development is now in [SSClash-Go](https://github.com/zerolabnet/SSClash-Go).**  
+> For new deployments, use the Go edition (single static binary, embedded web UI, same `/opt/clash` layout and feature set).  
+> This repository is the legacy **LuCI app** (`luci-app-ssclash`) for OpenWrt; it still gets maintenance releases, but new features ship in SSClash-Go.
+
 <p align="center">
  <img src=".github/assets/images/logos/SSClash.png" width="200">
 </p>
@@ -64,12 +68,12 @@ Download the SSClash package and install it.
 
 ```bash
 # OpenWrt >= 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.7.0/luci-app-ssclash-4.7.0-r1.apk -o /tmp/luci-app-ssclash-4.7.0-r1.apk
-apk add --allow-untrusted /tmp/luci-app-ssclash-4.7.0-r1.apk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.7.1/luci-app-ssclash-4.7.1-r1.apk -o /tmp/luci-app-ssclash-4.7.1-r1.apk
+apk add --allow-untrusted /tmp/luci-app-ssclash-4.7.1-r1.apk
 
 # OpenWrt < 25:
-curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.7.0/luci-app-ssclash_4.7.0-r1_all.ipk -o /tmp/luci-app-ssclash_4.7.0-r1_all.ipk
-opkg install /tmp/luci-app-ssclash_4.7.0-r1_all.ipk
+curl -L https://github.com/zerolabnet/ssclash/releases/download/v4.7.1/luci-app-ssclash_4.7.1-r1_all.ipk -o /tmp/luci-app-ssclash_4.7.1-r1_all.ipk
+opkg install /tmp/luci-app-ssclash_4.7.1-r1_all.ipk
 
 rm /tmp/*.ipk /tmp/*.apk
 ```
