@@ -71,8 +71,17 @@ detect_openwrt() {
 
     info "OpenWrt: ${B}${OW_RELEASE}${N}"
 
+    # Пакетный менеджер определяем по фактически установленному бинарнику —
+    # это надёжнее версии. На SNAPSHOT DISTRIB_RELEASE == "SNAPSHOT", поэтому
+    # числовое сравнение по OW_MAJOR не работает и ошибочно выбирало opkg,
+    # хотя свежие снепшоты уже перешли на apk.
+    if command -v apk >/dev/null 2>&1; then
+        PKG_MGR="apk"
+    elif command -v opkg >/dev/null 2>&1; then
+        PKG_MGR="opkg"
+    # Фолбэк на версию, если ни один бинарник не найден в PATH:
     # OpenWrt 25+ использует apk; 21-24 — opkg
-    if [ "${OW_MAJOR:-0}" -ge 25 ] 2>/dev/null; then
+    elif [ "${OW_MAJOR:-0}" -ge 25 ] 2>/dev/null; then
         PKG_MGR="apk"
     else
         PKG_MGR="opkg"
