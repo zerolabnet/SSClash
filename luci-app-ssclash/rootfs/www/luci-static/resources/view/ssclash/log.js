@@ -127,10 +127,12 @@ function startPolling() {
 
 return view.extend({
     load: function () {
-        return fs.stat('/sbin/logread').then(stat => {
-            loggerPath = stat && stat.path ? stat.path : null;
-        }).catch(() => {
-            loggerPath = null;
+        return Promise.all([
+            L.resolveDefault(fs.stat('/sbin/logread'), null),
+            L.resolveDefault(fs.stat('/usr/sbin/logread'), null)
+        ]).then(function(stats) {
+            loggerPath = (stats[0] && stats[0].path) ||
+                (stats[1] && stats[1].path) || null;
         });
     },
 
