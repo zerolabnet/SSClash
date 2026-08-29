@@ -2855,12 +2855,6 @@ start() {
     server_ips=$(extract_server_ips)
     fake_ip_config=$(extract_fake_ip_config)
 
-    # Parse the combined result
-    if [ -n "$fake_ip_config" ]; then
-        fake_ip_range="${fake_ip_config%|*}"
-        fake_ip_filter_mode="${fake_ip_config#*|}"
-    fi
-
     # Expose filter mode globally so helper functions (apply_nft_marking_mangle etc.) can read it
     FAKE_IP_FILTER_MODE="${fake_ip_filter_mode:-blacklist}"
 
