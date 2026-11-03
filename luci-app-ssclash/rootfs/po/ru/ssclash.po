@@ -310,8 +310,11 @@ msgstr "Гибридный режим (лучший для игр). TCP чере
 msgid "TUN Stack"
 msgstr "Стек TUN"
 
-msgid "Choose Mihomo TUN stack. `system` is fastest but depends on kernel capabilities; `gvisor` is more compatible; `mixed` combines both."
-msgstr "Выберите стек TUN для Mihomo. `system` самый быстрый, но зависит от возможностей ядра; `gvisor` более совместим; `mixed` сочетает оба подхода."
+msgid "Choose Mihomo TUN stack. `mips` is the default; `system` is fastest but depends on kernel capabilities; `gvisor` is more compatible; `mixed` combines both."
+msgstr "Выберите стек TUN для Mihomo. `mips` используется по умолчанию; `system` самый быстрый, но зависит от возможностей ядра; `gvisor` более совместим; `mixed` сочетает оба подхода."
+
+msgid "mips: Mihomo mipstack userspace stack (default)."
+msgstr "mips: userspace-стек Mihomo mipstack (по умолчанию)."
 
 msgid "system: kernel network stack. If TCP in TUN fails on your device, try gvisor."
 msgstr "system: сетевой стек ядра. Если TCP в TUN не работает на вашем устройстве, попробуйте gvisor."

@@ -338,7 +338,7 @@ function transformProxyMode(content, proxyMode, tunStack) {
         }
     }
 
-    const normalizedTunStack = ['system', 'gvisor', 'mixed'].includes(tunStack) ? tunStack : 'system';
+    const normalizedTunStack = ['mips', 'system', 'gvisor', 'mixed'].includes(tunStack) ? tunStack : 'mips';
     let configToInsert = [];
     switch (proxyMode) {
         case 'tproxy':
@@ -427,7 +427,7 @@ async function loadSettings() {
         const settings = {
             mode: 'exclude',
             proxyMode: '',
-            tunStack: 'system',
+            tunStack: 'mips',
             autoDetectLan: true,
             autoDetectWan: true,
             blockQuic: true,
@@ -450,7 +450,7 @@ async function loadSettings() {
             switch(key) {
                 case 'INTERFACE_MODE': settings.mode = value; break;
                 case 'PROXY_MODE': settings.proxyMode = value; break;
-                case 'TUN_STACK': settings.tunStack = value || 'system'; break;
+                case 'TUN_STACK': settings.tunStack = value || 'mips'; break;
                 case 'AUTO_DETECT_LAN': settings.autoDetectLan = value === 'true'; break;
                 case 'AUTO_DETECT_WAN': settings.autoDetectWan = value === 'true'; break;
                 case 'BLOCK_QUIC': settings.blockQuic = value === 'true'; break;
@@ -480,7 +480,7 @@ async function loadSettings() {
         return {
             mode: 'exclude',
             proxyMode: '',
-            tunStack: 'system',
+            tunStack: 'mips',
             autoDetectLan: true,
             autoDetectWan: true,
             blockQuic: true,
@@ -1123,13 +1123,14 @@ function createTunStackSection(currentTunStack) {
 
     container.appendChild(E('h3', _('TUN Stack')));
     container.appendChild(E('div', { 'class': 'cbi-section-descr' },
-        _('Choose Mihomo TUN stack. `system` is fastest but depends on kernel capabilities; `gvisor` is more compatible; `mixed` combines both.')
+        _('Choose Mihomo TUN stack. `mips` is the default; `system` is fastest but depends on kernel capabilities; `gvisor` is more compatible; `mixed` combines both.')
     ));
 
     const select = E('select', {
         'class': 'cbi-input-select',
         'id': 'tun-stack-select'
     }, [
+        E('option', { 'value': 'mips' }, 'mips'),
         E('option', { 'value': 'system' }, 'system'),
         E('option', { 'value': 'gvisor' }, 'gvisor'),
         E('option', { 'value': 'mixed' }, 'mixed')
@@ -1142,7 +1143,10 @@ function createTunStackSection(currentTunStack) {
 
     function updateHint() {
         const value = select.value;
-        if (value === 'system') {
+        if (value === 'mips') {
+            hint.textContent = _('mips: Mihomo mipstack userspace stack (default).');
+            hint.style.borderLeftColor = '#6f42c1';
+        } else if (value === 'system') {
             hint.textContent = _('system: kernel network stack. If TCP in TUN fails on your device, try gvisor.');
             hint.style.borderLeftColor = '#0066cc';
         } else if (value === 'gvisor') {
@@ -1154,7 +1158,7 @@ function createTunStackSection(currentTunStack) {
         }
     }
 
-    const effectiveStack = ['system', 'gvisor', 'mixed'].includes(currentTunStack) ? currentTunStack : 'system';
+    const effectiveStack = ['mips', 'system', 'gvisor', 'mixed'].includes(currentTunStack) ? currentTunStack : 'mips';
     setTimeout(() => {
         select.value = effectiveStack;
         updateHint();
@@ -1665,7 +1669,7 @@ return view.extend({
 
         const currentProxyMode = settings.proxyMode || await detectCurrentProxyMode();
         const proxyModeSection = createProxyModeSection(currentProxyMode);
-        const tunStackSection = createTunStackSection(settings.tunStack || 'system');
+        const tunStackSection = createTunStackSection(settings.tunStack || 'mips');
         tunStackSection.style.display = (currentProxyMode === 'tun' || currentProxyMode === 'mixed') ? 'block' : 'none';
 
         const proxyModeSelectForTun = proxyModeSection.querySelector('#proxy-mode-select');
@@ -1782,7 +1786,7 @@ return view.extend({
                 const proxyModeSelect = document.getElementById('proxy-mode-select');
                 const savedProxyMode = proxyModeSelect ? proxyModeSelect.value : 'tproxy';
                 const tunStackSelect = document.getElementById('tun-stack-select');
-                const savedTunStack = tunStackSelect ? tunStackSelect.value : 'system';
+                const savedTunStack = tunStackSelect ? tunStackSelect.value : 'mips';
                 const autoDetectLan = autoDetectOptions.querySelector('#auto_detect_lan').checked;
                 const autoDetectWan = autoDetectOptions.querySelector('#auto_detect_wan').checked;
                 const blockQuic = additionalSettings.querySelector('#block_quic').checked;
