@@ -31,7 +31,7 @@ PROXY_MODE="tproxy"
 AUTO_DETECT_LAN="true"
 AUTO_DETECT_WAN="true"
 BLOCK_QUIC="true"
-TUN_STACK="system"
+TUN_STACK="mips"
 DETECTED_LAN=""
 DETECTED_WAN=""
 INCLUDED_INTERFACES=""
@@ -159,11 +159,11 @@ preflight_check_tun_stack() {
                 warn "TUN stack 'system' selected but /dev/net/tun is missing. TCP in TUN may fail; consider stack=gvisor."
             fi
             ;;
-        "gvisor"|"mixed")
+        "mips"|"gvisor"|"mixed")
             msg "TUN stack '$TUN_STACK' selected"
             ;;
         *)
-            warn "Unknown TUN stack '$TUN_STACK'; expected system/gvisor/mixed"
+            warn "Unknown TUN stack '$TUN_STACK'; expected mips/system/gvisor/mixed"
             ;;
     esac
 
